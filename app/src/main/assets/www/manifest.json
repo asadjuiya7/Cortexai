@@ -1,0 +1,9 @@
+{
+  "name": "Cortex",
+  "short_name": "Cortex",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#05080f",
+  "theme_color": "#05080f",
+  "icons": []
+}
