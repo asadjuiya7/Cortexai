@@ -1,0 +1,46 @@
+name: Cortex Developer Agent
+
+# Runs when Cortex (by the owner's voice) opens an issue labelled "cortex-request".
+# The agent writes the change and opens a pull request. It never merges anything:
+# you review the pull request and merge it yourself, and the build starts after that.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  agent:
+    # Only issues carrying the label AND created by the repository owner.
+    if: >
+      contains(github.event.issue.labels.*.name, 'cortex-request') &&
+      github.event.issue.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are the Cortex Developer Agent. Repository: ${{ github.repository }}.
+            Read issue #${{ github.event.issue.number }} ("${{ github.event.issue.title }}") and implement the change it describes.
+
+            Rules:
+            - Android app code lives in app/src/main (Kotlin). The Windows app, if present, lives in the pc/ folder (Electron).
+            - Keep the change small and focused. Do not remove existing features.
+            - NEVER touch license checking, API keys, secrets, signing keys or the Worker URL, and never add code that sends user data anywhere new.
+            - You cannot compile Android here, so be extra careful with Kotlin syntax and imports. Re-read every file you edit.
+            - Create a branch named cortex/issue-${{ github.event.issue.number }}, commit, push, and open a pull request with `gh pr create` that explains the change in plain words and says "Closes #${{ github.event.issue.number }}".
+            - Do NOT merge the pull request. The owner reviews and merges it.
+          claude_args: |
+            --model claude-sonnet-5-5 --max-turns 40
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(gh:*)"
