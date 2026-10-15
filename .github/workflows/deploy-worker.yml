@@ -1,0 +1,23 @@
+name: Deploy Cortex Worker
+
+# Runs when worker/ai-proxy.js or worker/wrangler.toml changes, or when you press "Run workflow".
+on:
+  push:
+    paths:
+      - 'worker/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the code has no syntax errors
+        run: node --check worker/ai-proxy.js
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          command: deploy
