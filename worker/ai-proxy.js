@@ -124,7 +124,7 @@ async function fallbackChain(env, system, messages) {
     try {
       const out = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', { messages: chat, max_tokens: 400 });
       const t = out && (out.response || (out.result && out.result.response));
-      if (t) return String(t);
+      if (t) return typeof t === 'object' ? JSON.stringify(t) : String(t);
     } catch (e) {}
   }
   if (env.MISTRAL_API_KEY) {
@@ -181,7 +181,8 @@ async function runDiag(env) {
   if (env.CEREBRAS_API_KEY) await run('cerebras', () => openaiCompat('https://api.cerebras.ai/v1/chat/completions', env.CEREBRAS_API_KEY, env.CEREBRAS_MODEL || 'llama-3.3-70b', chat));
   if (env.AI) await run('cloudflare_ai', async () => {
     const o = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', { messages: chat, max_tokens: 20 });
-    return o && (o.response || (o.result && o.result.response));
+    const r = o && (o.response || (o.result && o.result.response));
+    return typeof r === 'object' ? JSON.stringify(r) : r;
   });
   return out;
 }
