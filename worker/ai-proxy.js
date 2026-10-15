@@ -211,8 +211,35 @@ async function runDiag(env) {
 
 async function fallbackChain(env, system, messages) {
   const reminder = '\n\nFORMAT RULE: a phone action must be exactly {"device_action":"<action>","param":"<value>"} with those two keys, for example {"device_action":"open_app","param":"Chrome"} or {"device_action":"web_search","param":"Lodhran weather"}.';
-  const r = await fallbackChainRaw(env, (system || '') + reminder, messages);
-  return r === null ? null : fixActionShape(r);
+  const rule2 = '\nSEARCH RULE: to search the web or get weather/news, output ONE action only: {"device_action":"web_search","param":"<query>"}. NEVER open_app Chrome/browser first. Never use get_weather.';
+  const r = await fallbackChainRaw(env, (system || '') + reminder + rule2, messages);
+  return r === null ? null : fixSearch(fixActionShape(r), messages);
+}
+
+// If the model only opened Chrome but the user asked to search, turn it into a real search.
+function fixSearch(reply, messages) {
+  try {
+    if (typeof reply !== 'string') return reply;
+    const o = JSON.parse(reply.trim());
+    if (!o || typeof o !== 'object') return reply;
+    let last = '';
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'user') {
+        last = Array.isArray(m.content) ? m.content.map((p) => (p && p.text) || '').join(' ') : String(m.content);
+        break;
+      }
+    }
+    if (o.get_weather) {
+      const city = (last.match(/(?:in|of|for)\s+([A-Za-z ]{3,30})$/i) || [])[1] || '';
+      return JSON.stringify({ device_action: 'web_search', param: (city + ' weather today').trim() });
+    }
+    if (o.device_action === 'open_app' && /chrome|browser/i.test(String(o.param))) {
+      const m = last.match(/(?:search(?:\s+for)?|dhoond(?:o)?|dhundo|google)\s+(.{2,80})$/i);
+      if (m) return JSON.stringify({ device_action: 'web_search', param: m[1].replace(/[.?!]+$/, '').trim() });
+    }
+  } catch (e) {}
+  return reply;
 }
 
 export default {
