@@ -76,8 +76,30 @@ async function openaiCompat(url, key, model, chat) {
   return String(t);
 }
 
+// Backup models sometimes write {"open_app":"Chrome"} instead of
+// {"device_action":"open_app","param":"Chrome"}. Fix that shape here.
+const PHONE_ACTIONS = ['open_app','flashlight_on','flashlight_off','volume_up','volume_down','mute','unmute','call','send_sms','whatsapp_message','send_email','set_alarm','set_timer','web_search','youtube_search','navigate','open_url','battery_status','wifi_settings','bluetooth_settings','go_home','go_back','recents','notifications','lock_screen','screenshot','click_text','type_text','scroll_down','scroll_up','read_screen'];
+function fixActionShape(text) {
+  if (typeof text !== 'string') return text;
+  let t = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  if (!t.startsWith('{') || !t.endsWith('}')) return text;
+  try {
+    const o = JSON.parse(t);
+    if (o && typeof o === 'object' && !o.device_action) {
+      const keys = Object.keys(o);
+      const k = (o.action && PHONE_ACTIONS.includes(o.action)) ? 'action' : keys.find((x) => PHONE_ACTIONS.includes(x));
+      if (k) {
+        const name = k === 'action' ? o.action : k;
+        const param = k === 'action' ? (o.param ?? o.value ?? '') : o[k];
+        return JSON.stringify({ device_action: name, param: param === true || param == null ? '' : String(param) });
+      }
+    }
+  } catch (e) {}
+  return text;
+}
+
 // Returns reply text, or null when no backup could answer.
-async function fallbackChain(env, system, messages) {
+async function fallbackChainRaw(env, system, messages) {
   const plain = [];
   for (const m of messages) {
     const role = m.role === 'assistant' ? 'assistant' : 'user';
@@ -185,6 +207,12 @@ async function runDiag(env) {
     return typeof r === 'object' ? JSON.stringify(r) : r;
   });
   return out;
+}
+
+async function fallbackChain(env, system, messages) {
+  const reminder = '\n\nFORMAT RULE: a phone action must be exactly {"device_action":"<action>","param":"<value>"} with those two keys, for example {"device_action":"open_app","param":"Chrome"} or {"device_action":"web_search","param":"Lodhran weather"}.';
+  const r = await fallbackChainRaw(env, (system || '') + reminder, messages);
+  return r === null ? null : fixActionShape(r);
 }
 
 export default {
