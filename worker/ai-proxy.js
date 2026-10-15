@@ -211,7 +211,7 @@ async function runDiag(env) {
 
 async function fallbackChain(env, system, messages) {
   const reminder = '\n\nFORMAT RULE: a phone action must be exactly {"device_action":"<action>","param":"<value>"} with those two keys, for example {"device_action":"open_app","param":"Chrome"} or {"device_action":"web_search","param":"Lodhran weather"}.';
-  const rule2 = '\nSEARCH RULE: to search the web or get weather/news, output ONE action only: {"device_action":"web_search","param":"<query>"}. NEVER open_app Chrome/browser first. Never use get_weather.';
+  const rule2 = '\nSEARCH RULE: to search the web or get weather/news, output ONE action only: {"device_action":"web_search","param":"<query>"}. NEVER open_app Chrome/browser first. Never use get_weather. NEVER say "Searching for..." in words: reply with the JSON action itself and nothing else.';
   const r = await fallbackChainRaw(env, (system || '') + reminder + rule2, messages);
   return r === null ? null : fixSearch(fixActionShape(r), messages);
 }
@@ -220,7 +220,13 @@ async function fallbackChain(env, system, messages) {
 function fixSearch(reply, messages) {
   try {
     if (typeof reply !== 'string') return reply;
-    const o = JSON.parse(reply.trim());
+    const rt = reply.trim();
+    // Model said "Searching for X." in words but sent no command: turn it into the command.
+    if (!rt.startsWith('{') && rt.length < 140) {
+      const sm = rt.match(/^(?:ok(?:ay)?[,.! ]*)?(?:let me |i(?:'ll| will) |i am |i'm )?(?:search(?:ing)?|look(?:ing)? up|checking)(?: for| up)?\s+(.{3,100}?)[.!…]*$/i);
+      if (sm) return JSON.stringify({ device_action: 'web_search', param: sm[1].trim() });
+    }
+    const o = JSON.parse(rt);
     if (!o || typeof o !== 'object') return reply;
     let last = '';
     for (let i = messages.length - 1; i >= 0; i--) {
