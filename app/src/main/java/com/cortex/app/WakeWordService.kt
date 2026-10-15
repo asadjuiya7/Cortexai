@@ -1135,6 +1135,18 @@ class WakeWordService : Service() {
             handler.postDelayed({ afterSpeaking() }, 3000)
             return
         }
+        // Make sure the media volume is not left muted or at zero, otherwise Cortex speaks silently.
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            beepMuted = false
+            if (am.isStreamMute(AudioManager.STREAM_MUSIC)) {
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            }
+            if (am.getStreamVolume(AudioManager.STREAM_MUSIC) == 0) {
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) / 2, 0)
+            }
+        } catch (e: Throwable) {
+        }
         pickBestVoice(t, loc)
         t.setSpeechRate(0.95f)
         t.setPitch(1.0f)
