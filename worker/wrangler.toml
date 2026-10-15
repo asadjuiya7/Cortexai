@@ -1,0 +1,14 @@
+name = "cortexai"
+main = "ai-proxy.js"
+compatibility_date = "2026-10-01"
+
+# Keep the variables and secrets already set in the Cloudflare dashboard.
+keep_vars = true
+
+# Run close to Google's servers so Gemini does not say "location not supported".
+[placement]
+mode = "smart"
+
+# Cloudflare AI (free backup brain + voice-to-text).
+[ai]
+binding = "AI"
