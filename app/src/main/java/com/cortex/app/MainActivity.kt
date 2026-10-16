@@ -1,6 +1,7 @@
 package com.cortex.app
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -9,11 +10,16 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.provider.MediaStore
 import android.provider.Settings
+import android.util.Base64
 import android.view.ViewGroup
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
+import android.webkit.WebViewClient
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -24,6 +30,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var prefs: SharedPreferences
     private var pendingVoiceCommand: String? = null
+    private var printView: WebView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -185,6 +192,53 @@ class MainActivity : AppCompatActivity() {
             }
             latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
             return result
+        }
+
+        /** Saves a file made by Cortex into the phone's Downloads folder. */
+        @android.webkit.JavascriptInterface
+        fun saveFile(name: String?, mime: String?, base64: String?): String {
+            val fileName = (name ?: "cortex-file.txt").replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            return try {
+                val bytes = Base64.decode(base64 ?: "", Base64.DEFAULT)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                        put(MediaStore.Downloads.MIME_TYPE, mime ?: "application/octet-stream")
+                        put(MediaStore.Downloads.RELATIVE_PATH, "Download")
+                    }
+                    val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        ?: return "I could not save $fileName."
+                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    "Saved $fileName in your Downloads folder."
+                } else {
+                    val dir = getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+                    val f = java.io.File(dir, fileName)
+                    f.writeBytes(bytes)
+                    "Saved $fileName in the Cortex folder: ${f.absolutePath}"
+                }
+            } catch (e: Exception) {
+                "I could not save $fileName."
+            }
+        }
+
+        /** Opens Android's print screen for an HTML page, where the user picks "Save as PDF". */
+        @android.webkit.JavascriptInterface
+        fun printHtml(title: String?, html: String?) {
+            runOnUiThread {
+                try {
+                    val wv = WebView(this@MainActivity)
+                    printView = wv
+                    wv.webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView, url: String?) {
+                            val pm = getSystemService(Context.PRINT_SERVICE) as PrintManager
+                            val jobName = title ?: "Cortex document"
+                            pm.print(jobName, view.createPrintDocumentAdapter(jobName), PrintAttributes.Builder().build())
+                        }
+                    }
+                    wv.loadDataWithBaseURL(null, html ?: "", "text/html", "UTF-8", null)
+                } catch (e: Exception) {
+                }
+            }
         }
 
         @android.webkit.JavascriptInterface
