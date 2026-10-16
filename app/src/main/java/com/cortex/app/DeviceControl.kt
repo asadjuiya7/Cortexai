@@ -26,7 +26,7 @@ import java.util.Locale
 /** Runs phone actions directly (no Tasker / MacroDroid). Shared by the popup and the in-app chat. */
 object DeviceControl {
 
-    val PROMPT = """You can control this phone. When the user asks you to do something on the phone, reply with ONLY this JSON and nothing else: {"device_action":"<action>","param":"<value>"}. Actions: open_app (param: app name in English such as WhatsApp, YouTube, Camera, Settings, Chrome), flashlight_on, flashlight_off, volume_up, volume_down, mute, unmute, call (param: contact name exactly as the user said it, written in English letters, or a phone number), send_sms (param: contact name or number,message), whatsapp_message (param: contact name or number with country code,message), send_email (param: to,subject,body), set_alarm (param: 24-hour HH:MM), set_timer (param: seconds), web_search (param: query, Google in the browser), youtube_search (param: query), app_search (param: app name,query - opens THAT app and searches inside it, e.g. YouTube,lofi music or Daraz,shoes or Play Store,calculator or Spotify,arijit or WhatsApp,Ali - use this whenever the user names an app to search in; use web_search only when no app is named), navigate (param: place), open_url (param: url), battery_status, wifi_settings, bluetooth_settings, go_home, go_back, recents, notifications, lock_screen, screenshot, click_text (param: visible text of the button on screen), type_text (param: text to type), scroll_down, scroll_up, read_screen (reads the text visible on screen). Use an empty param when none is needed. You can work in several steps: after each action you will receive a user message starting with [PHONE] giving the result and the visible screen text. Keep replying with ONE JSON action at a time until the whole task is done, then reply with a short plain-text answer. Never ask the user to tap anything yourself. For weather, news or facts: use web_search, then read_screen, then answer from the screen text. For WhatsApp: use whatsapp_message (it opens the chat, fills the text and sends it by itself), then confirm. For SMS: use send_sms (it opens the message with the text filled in), then click_text with Send to actually send it, then confirm. To use an app: open_app, then click_text, type_text, scroll or read_screen as needed. If a click fails, call read_screen and try another label. Calls go through directly when permission is given. If a [PHONE] result says "Which contact?" it lists several people with that name: the user will answer with the full name, then repeat the SAME action (call, whatsapp_message or send_sms) with that full name and, for messages, the same message text as before. For whatsapp_message the app presses Send by itself, so do not click Send yourself; after it, just confirm briefly. Wi-Fi and Bluetooth can only be opened in settings, apps cannot switch them. If the request is not a phone action, just answer normally in plain text."""
+    val PROMPT = """You can control this phone. When the user asks you to do something on the phone, reply with ONLY this JSON and nothing else: {"device_action":"<action>","param":"<value>"}. Actions: open_app (param: app name in English such as WhatsApp, YouTube, Camera, Settings, Chrome), flashlight_on, flashlight_off, volume_up, volume_down, mute, unmute, call (param: contact name as the user said it, in English letters is fine - the phone matches Urdu or Hindi contact names itself - or a phone number), send_sms (param: contact name or number,message), whatsapp_message (param: contact name or number with country code,message), send_email (param: to,subject,body), set_alarm (param: 24-hour HH:MM), set_timer (param: seconds), web_search (param: query, Google in the browser), youtube_search (param: query), app_search (param: app name,query - opens THAT app and searches inside it, e.g. YouTube,lofi music or Daraz,shoes or Play Store,calculator or Spotify,arijit or WhatsApp,Ali - use this whenever the user names an app to search in; use web_search only when no app is named), navigate (param: place), open_url (param: url), battery_status, wifi_settings, bluetooth_settings, go_home, go_back, recents, notifications, lock_screen, screenshot, click_text (param: visible text of the button on screen), type_text (param: text to type), scroll_down, scroll_up, read_screen (reads the text visible on screen). Use an empty param when none is needed. You can work in several steps: after each action you will receive a user message starting with [PHONE] giving the result and the visible screen text. Keep replying with ONE JSON action at a time until the whole task is done, then reply with a short plain-text answer. Never ask the user to tap anything yourself. For weather, news or facts: use web_search, then read_screen, then answer from the screen text. For WhatsApp: use whatsapp_message (it opens the chat, fills the text and sends it by itself), then confirm. For SMS: use send_sms (it opens the message with the text filled in), then click_text with Send to actually send it, then confirm. To use an app: open_app, then click_text, type_text, scroll or read_screen as needed. If a click fails, call read_screen and try another label. Calls go through directly when permission is given. If a [PHONE] result says "Which contact?" it lists several people with that name: the user will answer with the full name, then repeat the SAME action (call, whatsapp_message or send_sms) with that full name and, for messages, the same message text as before. For whatsapp_message the app presses Send by itself, so do not click Send yourself; after it, just confirm briefly. Wi-Fi and Bluetooth can only be opened in settings, apps cannot switch them. If the request is not a phone action, just answer normally in plain text."""
 
     fun parse(raw: String): Pair<String, String>? {
         var t = raw.trim()
@@ -178,6 +178,52 @@ object DeviceControl {
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 
+    // ---- Name matching that works across scripts: "Sajjad" (English letters) finds "سجاد" (Urdu) and the other way round.
+
+    private fun nameWords(s: String): List<String> =
+        s.lowercase(Locale.ROOT).split(Regex("[\\s._\\-]+")).filter { it.isNotEmpty() }
+
+    private val SOUND_MAP: Map<Char, String> = mapOf(
+        'ا' to "a", 'آ' to "a", 'ب' to "b", 'پ' to "p", 'ت' to "t", 'ٹ' to "t", 'ث' to "s", 'ج' to "j", 'چ' to "c",
+        'ح' to "h", 'خ' to "k", 'د' to "d", 'ڈ' to "d", 'ذ' to "z", 'ر' to "r", 'ڑ' to "r", 'ز' to "z", 'ژ' to "z",
+        'س' to "s", 'ش' to "s", 'ص' to "s", 'ض' to "z", 'ط' to "t", 'ظ' to "z", 'ع' to "a", 'غ' to "g", 'ف' to "f",
+        'ق' to "k", 'ک' to "k", 'ك' to "k", 'گ' to "g", 'ل' to "l", 'م' to "m", 'ن' to "n", 'ں' to "n", 'و' to "u",
+        'ہ' to "h", 'ھ' to "h", 'ء' to "a", 'ی' to "i", 'ے' to "i", 'ي' to "i", 'ئ' to "i", 'ؤ' to "u", 'ة' to "h",
+        'क' to "k", 'ख' to "k", 'ग' to "g", 'घ' to "g", 'च' to "c", 'छ' to "c", 'ज' to "j", 'झ' to "j", 'ट' to "t",
+        'ठ' to "t", 'ड' to "d", 'ढ' to "d", 'त' to "t", 'थ' to "t", 'द' to "d", 'ध' to "d", 'न' to "n", 'प' to "p",
+        'फ' to "f", 'ब' to "b", 'भ' to "b", 'म' to "m", 'य' to "i", 'र' to "r", 'ल' to "l", 'व' to "u", 'श' to "s",
+        'ष' to "s", 'स' to "s", 'ह' to "h"
+    )
+
+    /** A rough consonant skeleton of a name, the same for Latin, Urdu and Hindi spellings of it. */
+    private fun sound(word: String): String {
+        var t = word.lowercase(Locale.ROOT)
+        t = t.replace("ch", "\u0001").replace("sh", "s").replace("kh", "k").replace("gh", "g").replace("th", "t")
+            .replace("dh", "d").replace("ph", "f").replace("zh", "z").replace("q", "k").replace("c", "k")
+            .replace("\u0001", "c").replace("x", "ks")
+        val sb = StringBuilder()
+        for (ch in t) {
+            val m = SOUND_MAP[ch] ?: (if (ch in 'a'..'z') ch.toString() else "")
+            for (c in m) {
+                if (c in "aeiouyhwv") continue
+                if (sb.isNotEmpty() && sb[sb.length - 1] == c) continue
+                sb.append(c)
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun nameMatches(query: List<String>, name: List<String>): Boolean {
+        if (query.isEmpty()) return false
+        return query.all { qw ->
+            val qs = sound(qw)
+            name.any { nw ->
+                nw == qw || nw.startsWith(qw) ||
+                    (qs.isNotEmpty() && sound(nw).let { ns -> ns == qs || (qs.length >= 3 && ns.startsWith(qs)) })
+            }
+        }
+    }
+
     private class Pick(val number: String?, val name: String?, val problem: String?)
 
     /**
@@ -192,8 +238,7 @@ object DeviceControl {
         if (ctx.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             return Pick(null, null, "I need the Contacts permission. Please allow Contacts for Cortex in the app settings.")
         }
-        val words = q.lowercase(Locale.ROOT).split(Regex("\\s+")).filter { it.isNotEmpty() }
-        val key = words.maxByOrNull { it.length } ?: q.lowercase(Locale.ROOT)
+        val qWords = nameWords(q)
         val byName = LinkedHashMap<String, Pair<String, Int>>() // display name -> (number, mobile rank)
         try {
             val cur = ctx.contentResolver.query(
@@ -203,16 +248,14 @@ object DeviceControl {
                     ContactsContract.CommonDataKinds.Phone.NUMBER,
                     ContactsContract.CommonDataKinds.Phone.TYPE
                 ),
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ?",
-                arrayOf("%$key%"), null
+                null, null, null
             )
             cur?.use {
                 while (it.moveToNext()) {
                     val name = it.getString(0) ?: continue
                     val num = it.getString(1) ?: continue
                     val type = it.getInt(2)
-                    val low = name.lowercase(Locale.ROOT)
-                    if (!words.all { w -> low.contains(w) }) continue
+                    if (!nameMatches(qWords, nameWords(name))) continue
                     val rank = if (type == ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE) 0 else 1
                     val old = byName[name]
                     if (old == null || rank < old.second) byName[name] = Pair(num, rank)
@@ -224,7 +267,8 @@ object DeviceControl {
         if (byName.isEmpty()) return Pick(null, null, "I could not find $q in your contacts.")
         val names = byName.keys.toList()
         if (names.size == 1) return Pick(byName[names[0]]!!.first, names[0], null)
-        val exact = names.filter { it.equals(q, ignoreCase = true) }
+        val qKey = qWords.map { sound(it) }
+        val exact = names.filter { n -> n.equals(q, ignoreCase = true) || nameWords(n).map { sound(it) } == qKey }
         if (exact.size == 1) return Pick(byName[exact[0]]!!.first, exact[0], null)
         // Same person saved twice under different names: one number, no need to ask.
         val tails = names.map { n -> byName[n]!!.first.filter { c -> c.isDigit() }.takeLast(10) }.toSet()
