@@ -67,7 +67,7 @@ async function openaiCompat(url, key, model, chat) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
-    body: JSON.stringify({ model, messages: chat, max_tokens: 400 }),
+    body: JSON.stringify({ model, messages: chat, max_tokens: 1800 }),
     signal: AbortSignal.timeout(7000),
   });
   const j = await res.json();
@@ -78,7 +78,7 @@ async function openaiCompat(url, key, model, chat) {
 
 // Backup models sometimes write {"open_app":"Chrome"} instead of
 // {"device_action":"open_app","param":"Chrome"}. Fix that shape here.
-const PHONE_ACTIONS = ['open_app','flashlight_on','flashlight_off','volume_up','volume_down','mute','unmute','call','send_sms','whatsapp_message','send_email','set_alarm','set_timer','web_search','youtube_search','navigate','open_url','battery_status','wifi_settings','bluetooth_settings','go_home','go_back','recents','notifications','lock_screen','screenshot','click_text','type_text','scroll_down','scroll_up','read_screen'];
+const PHONE_ACTIONS = ['open_app','flashlight_on','flashlight_off','volume_up','volume_down','mute','unmute','call','send_sms','whatsapp_message','send_email','set_alarm','set_timer','web_search','youtube_search','app_search','navigate','open_url','battery_status','wifi_settings','bluetooth_settings','go_home','go_back','recents','notifications','lock_screen','screenshot','click_text','type_text','scroll_down','scroll_up','read_screen'];
 function fixActionShape(text) {
   if (typeof text !== 'string') return text;
   let t = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -130,7 +130,9 @@ async function fallbackChainRaw(env, system, messages) {
     }
     plain.push({ role, content: text.trim() || '(no text)' });
   }
-  const chat = system ? [{ role: 'system', content: system }, ...plain] : plain;
+  let sys2 = system || '';
+  if (!/LIVE DATA/.test(sys2)) sys2 += await liveContext(env, lastUserText(plain));
+  const chat = sys2 ? [{ role: 'system', content: sys2 }, ...plain] : plain;
 
   if (env.CEREBRAS_API_KEY) {
     try {
@@ -144,7 +146,7 @@ async function fallbackChainRaw(env, system, messages) {
   }
   if (env.AI) {
     try {
-      const out = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', { messages: chat, max_tokens: 400 });
+      const out = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', { messages: chat, max_tokens: 1800 });
       const t = out && (out.response || (out.result && out.result.response));
       if (t) return typeof t === 'object' ? JSON.stringify(t) : String(t);
     } catch (e) {}
@@ -211,9 +213,9 @@ async function runDiag(env) {
 
 async function fallbackChain(env, system, messages) {
   const reminder = '\n\nFORMAT RULE: a phone action must be exactly {"device_action":"<action>","param":"<value>"} with those two keys, for example {"device_action":"open_app","param":"Chrome"} or {"device_action":"web_search","param":"Lodhran weather"}.';
-  const rule2 = '\nSEARCH RULE: to search the web or get weather/news, output ONE action only: {"device_action":"web_search","param":"<query>"}. NEVER open_app Chrome/browser first. Never use get_weather. NEVER say "Searching for..." in words: reply with the JSON action itself and nothing else.';
+  const rule2 = '\nSEARCH RULE: if the user names an app to search in (YouTube, Play Store, Spotify, Daraz, Amazon, Maps, WhatsApp...) output ONE action: {"device_action":"app_search","param":"<app>,<query>"}. Only if no app is named, use {"device_action":"web_search","param":"<query>"}. NEVER open_app first for a search. Never use get_weather. NEVER say "Searching for..." in words: reply with the JSON action itself and nothing else.';
   const r = await fallbackChainRaw(env, (system || '') + reminder + rule2, messages);
-  return r === null ? null : fixSearch(fixActionShape(r), messages);
+  return r === null ? null : (/LIVE DATA/.test(system || '') ? fixActionShape(r) : fixSearch(fixActionShape(r), messages));
 }
 
 // If the model only opened Chrome but the user asked to search, turn it into a real search.
@@ -246,6 +248,107 @@ function fixSearch(reply, messages) {
     }
   } catch (e) {}
   return reply;
+}
+
+
+// ---------------------------------------------------------------- live data (web search + weather)
+// The worker fetches fresh information itself and hands it to the model, so Cortex answers
+// directly instead of just opening Chrome. Weather uses Open-Meteo (free, no key).
+// Web search uses Tavily if TAVILY_API_KEY is set (free plan), otherwise DuckDuckGo as best effort.
+const WMO = { 0: 'clear sky', 1: 'mostly clear', 2: 'partly cloudy', 3: 'overcast', 45: 'fog', 48: 'fog', 51: 'light drizzle', 53: 'drizzle', 55: 'heavy drizzle', 61: 'light rain', 63: 'rain', 65: 'heavy rain', 71: 'light snow', 73: 'snow', 75: 'heavy snow', 80: 'rain showers', 81: 'rain showers', 82: 'violent showers', 95: 'thunderstorm', 96: 'thunderstorm with hail', 99: 'thunderstorm with hail' };
+
+function lastUserText(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== 'user') continue;
+    const t = Array.isArray(m.content) ? m.content.map((p) => (p && p.text) || '').join(' ') : String(m.content || '');
+    return t.replace(/^\(The user said by voice:\)\s*/i, '').trim();
+  }
+  return '';
+}
+
+function weatherCity(text) {
+  const t = text.replace(/[?.!,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  let m = t.match(/(?:weather|mausam|temperature|forecast)\s+(?:in|of|for|at|ka|ki|ke)?\s*([A-Za-z][A-Za-z ]{1,30}?)(?:\s+(?:today|now|tomorrow|aaj|kal|city|ka|ki|ke|kaisa|kesa|hai|please))?$/i);
+  if (!m) m = t.match(/([A-Za-z][A-Za-z ]{1,30}?)\s+(?:city\s+)?(?:ka|ki|ke|me|mein|main)?\s*(?:weather|mausam|temperature|forecast)/i);
+  if (!m) return '';
+  return m[1].replace(/\b(the|city|live|current|today|now|me|mein|main|what|whats|is|how|search|open|chrome|and|please|batao|bata|do|check|karo|kro)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function weatherNow(city) {
+  const g = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name=' + encodeURIComponent(city), { signal: AbortSignal.timeout(4000) });
+  const gj = await g.json();
+  const loc = gj && gj.results && gj.results[0];
+  if (!loc) return '';
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + loc.latitude + '&longitude=' + loc.longitude +
+    '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m' +
+    '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto&forecast_days=3';
+  const w = await fetch(url, { signal: AbortSignal.timeout(4000) });
+  const wj = await w.json();
+  const c = wj.current || {};
+  const d = wj.daily || {};
+  let out = 'Weather for ' + loc.name + (loc.country ? ', ' + loc.country : '') + ' right now: ' + c.temperature_2m + '°C (feels ' + c.apparent_temperature + '°C), ' +
+    (WMO[c.weather_code] || 'unknown conditions') + ', humidity ' + c.relative_humidity_2m + '%, wind ' + c.wind_speed_10m + ' km/h.';
+  if (d.time) {
+    for (let i = 0; i < Math.min(3, d.time.length); i++) {
+      out += ' ' + d.time[i] + ': ' + d.temperature_2m_min[i] + '-' + d.temperature_2m_max[i] + '°C, ' + (WMO[d.weather_code[i]] || '') + ', rain chance ' + d.precipitation_probability_max[i] + '%.';
+    }
+  }
+  return out;
+}
+
+async function webSearchData(env, q) {
+  if (env.TAVILY_API_KEY) {
+    try {
+      const r = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.TAVILY_API_KEY },
+        body: JSON.stringify({ query: q, max_results: 5, include_answer: true }),
+        signal: AbortSignal.timeout(6000),
+      });
+      const j = await r.json();
+      let out = j.answer ? 'Summary: ' + j.answer + '\n' : '';
+      for (const x of (j.results || []).slice(0, 5)) out += '- ' + x.title + ': ' + String(x.content || '').slice(0, 300) + ' (' + x.url + ')\n';
+      if (out) return out;
+    } catch (e) {}
+  }
+  try {
+    const r = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36' },
+      signal: AbortSignal.timeout(5000),
+    });
+    const h = await r.text();
+    const out = [];
+    const re = /class="result__a"[^>]*>(.*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>(.*?)<\/a>/g;
+    let m;
+    const clean = (x) => x.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&quot;/g, '"').trim();
+    while ((m = re.exec(h)) && out.length < 5) out.push('- ' + clean(m[1]) + ': ' + clean(m[2]).slice(0, 300));
+    if (out.length) return out.join('\n');
+  } catch (e) {}
+  return '';
+}
+
+// Returns extra system-prompt text with fresh facts, or '' when the question needs none.
+async function liveContext(env, text) {
+  try {
+    if (!text || text.startsWith('[PHONE]') || text.length > 300) return '';
+    const lower = text.toLowerCase();
+    let data = '';
+    if (/\b(weather|mausam|temperature|forecast|barish|baarish)\b/i.test(lower)) {
+      const city = weatherCity(text);
+      if (city) data = await weatherNow(city);
+    }
+    if (!data && /\b(news|khabar|khabrein|latest|breaking|score|price|rate|today|aaj ki|abhi|current|who is|what is the|kya hai|kaun hai|search|dhoond|dhundo|google)\b/i.test(lower) &&
+        !/\b(open|call|whatsapp|flashlight|volume|alarm|timer|sms|message|youtube|play ?store|spotify|daraz|amazon|maps|facebook|instagram|tiktok|linkedin|pinterest|app)\b/i.test(lower)) {
+      const q = text.replace(/\b(please|can you|could you|cortex|search for|search|dhoond(?:o)?|dhundo|google|karo|kro|batao|bata do)\b/gi, ' ').replace(/\s+/g, ' ').trim() || text;
+      data = await webSearchData(env, q);
+    }
+    if (!data) return '';
+    return '\n\nLIVE DATA (fetched just now from the internet):\n' + data +
+      '\nANSWER the user directly from this LIVE DATA in 1-3 short sentences, in the user\'s language. Do NOT open Chrome or any app, and do NOT output a phone action for this question.';
+  } catch (e) {
+    return '';
+  }
 }
 
 export default {
@@ -435,7 +538,7 @@ export default {
 
     try {
       if (provider === 'anthropic') {
-        const anthropicBody = { model: 'claude-sonnet-5-5', max_tokens: 400, messages };
+        const anthropicBody = { model: 'claude-sonnet-5-5', max_tokens: 1800, messages };
         if (system) anthropicBody.system = system;
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -457,7 +560,7 @@ export default {
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.OPENAI_API_KEY}` },
-          body: JSON.stringify({ model: 'gpt-4o-mini', messages: chatMessages, max_tokens: 400 }),
+          body: JSON.stringify({ model: 'gpt-4o-mini', messages: chatMessages, max_tokens: 1800 }),
         });
         const data = await res.json();
         if (data.error) return json({ error: data.error.message || 'OpenAI error' }, 500);
@@ -470,8 +573,9 @@ export default {
             role: m.role === 'assistant' ? 'model' : 'user',
             parts: Array.isArray(m.content) ? m.content : [{ text: m.content }],
           })),
-          generationConfig: { maxOutputTokens: 400 },
+          generationConfig: { maxOutputTokens: 2000 },
         };
+        if (!/LIVE DATA/.test(system || '')) system = (system || '') + await liveContext(env, lastUserText(messages));
         if (system) geminiBody.system_instruction = { parts: [{ text: system }] };
 
         // gemini-3.8-flash: current stable flagship Flash model (GA Sep 2026).
