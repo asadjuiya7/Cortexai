@@ -128,7 +128,7 @@ class WakeWordService : Service() {
                 "\"hey cortes\", \"cortes\", \"hey codex\", \"[unk]\"]"
         const val MAX_STEPS = 8
         val CHAIN_ACTIONS = setOf(
-            "open_app", "web_search", "youtube_search", "open_url", "navigate", "whatsapp_message", "whatsapp",
+            "open_app", "app_search", "web_search", "youtube_search", "open_url", "navigate", "whatsapp_message", "whatsapp",
             "send_sms", "sms", "send_email", "email", "click_text", "type_text", "scroll_down", "scroll_up",
             "read_screen", "go_back", "go_home", "recents", "notifications"
         )
@@ -1027,7 +1027,7 @@ class WakeWordService : Service() {
             steps += 1
             showStatus("Working... ($steps)")
             showBody(result.take(160))
-            if (act.first !in CHAIN_ACTIONS || steps >= MAX_STEPS) {
+            if (act.first !in CHAIN_ACTIONS || steps >= MAX_STEPS || result.startsWith("Which contact") || result.startsWith("I could not find") || result.startsWith("I need the Contacts")) {
                 history.add(Pair("assistant", raw))
                 history.add(Pair("user", "[PHONE] $result"))
                 val say = if (act.first == "read_screen") "Done." else result.take(200)
@@ -1039,8 +1039,9 @@ class WakeWordService : Service() {
             }
             history.add(Pair("assistant", raw))
             val wait = when (act.first) {
-                "open_app", "web_search", "youtube_search", "open_url", "navigate",
-                "whatsapp_message", "whatsapp", "send_sms", "sms", "send_email", "email" -> 3500L
+                "whatsapp_message", "whatsapp" -> 7000L
+                "open_app", "app_search", "web_search", "youtube_search", "open_url", "navigate",
+                "send_sms", "sms", "send_email", "email" -> 3500L
                 else -> 1500L
             }
             handler.postDelayed({
