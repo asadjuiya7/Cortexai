@@ -146,6 +146,9 @@ object DeviceControl {
             "schedule" -> Scheduler.addFromParam(ctx, p)
             "list_tasks" -> Scheduler.describeAll(ctx)
             "cancel_task" -> Scheduler.cancel(ctx, p)
+            "plan_save" -> Scheduler.savePlan(ctx, p)
+            "plan_show" -> Scheduler.showPlan(ctx, p)
+            "plan_delete" -> Scheduler.deletePlan(ctx, p)
             "navigate" -> navigate(ctx, p)
             "open_url" -> {
                 val url = if (p.startsWith("http")) p else "https://$p"

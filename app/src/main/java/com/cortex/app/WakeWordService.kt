@@ -130,14 +130,16 @@ class WakeWordService : Service() {
         val CHAIN_ACTIONS = setOf(
             "open_app", "app_search", "web_search", "youtube_search", "open_url", "navigate", "whatsapp_message", "whatsapp",
             "send_sms", "sms", "send_email", "email", "click_text", "type_text", "scroll_down", "scroll_up",
-            "read_screen", "go_back", "go_home", "recents", "notifications"
+            "read_screen", "go_back", "go_home", "recents", "notifications",
+            "schedule", "list_tasks", "cancel_task", "plan_save", "plan_show", "plan_delete"
         )
         const val SPK_URL = "https://alphacephei.com/vosk/models/vosk-model-spk-0.4.zip"
         const val SPK_DIR = "vosk-model-spk-0.4"
         const val SPK_THRESHOLD = 0.65
         val SAFE_WHEN_LOCKED = setOf(
             "flashlight_on", "flashlight_off", "volume_up", "volume_down", "mute", "unmute",
-            "battery_status", "set_alarm", "set_timer", "schedule", "list_tasks", "cancel_task"
+            "battery_status", "set_alarm", "set_timer", "schedule", "list_tasks", "cancel_task",
+            "plan_save", "plan_show", "plan_delete"
         )
         val VOSK_WAKE = Regex("""\b(?:cortex|cortes|codex)\b""")
         val STOP_PATTERN = Regex("""(?:^|\s)(?:stop|bye|goodbye|cancel|dismiss|close)(?:\s|$)""")
@@ -1042,11 +1044,13 @@ class WakeWordService : Service() {
                 "whatsapp_message", "whatsapp" -> 7000L
                 "open_app", "app_search", "web_search", "youtube_search", "open_url", "navigate",
                 "send_sms", "sms", "send_email", "email" -> 3500L
+                "schedule", "list_tasks", "cancel_task", "plan_save", "plan_show", "plan_delete" -> 300L
                 else -> 1500L
             }
+            val noScreen = act.first in setOf("schedule", "list_tasks", "cancel_task", "plan_save", "plan_show", "plan_delete")
             handler.postDelayed({
                 if (stopped || mode != Mode.BUSY) return@postDelayed
-                val screen = try {
+                val screen = if (noScreen) "" else try {
                     CortexAccessibilityService.instance?.screenText() ?: ""
                 } catch (e: Exception) {
                     ""
