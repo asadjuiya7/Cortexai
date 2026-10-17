@@ -78,7 +78,7 @@ async function openaiCompat(url, key, model, chat) {
 
 // Backup models sometimes write {"open_app":"Chrome"} instead of
 // {"device_action":"open_app","param":"Chrome"}. Fix that shape here.
-const PHONE_ACTIONS = ['open_app','flashlight_on','flashlight_off','volume_up','volume_down','mute','unmute','call','send_sms','whatsapp_message','send_email','set_alarm','set_timer','web_search','youtube_search','app_search','schedule','list_tasks','cancel_task','navigate','open_url','battery_status','wifi_settings','bluetooth_settings','go_home','go_back','recents','notifications','lock_screen','screenshot','click_text','type_text','scroll_down','scroll_up','read_screen'];
+const PHONE_ACTIONS = ['open_app','flashlight_on','flashlight_off','volume_up','volume_down','mute','unmute','call','send_sms','whatsapp_message','send_email','set_alarm','set_timer','web_search','youtube_search','app_search','schedule','list_tasks','cancel_task','plan_save','plan_show','plan_delete','navigate','open_url','battery_status','wifi_settings','bluetooth_settings','go_home','go_back','recents','notifications','lock_screen','screenshot','click_text','type_text','scroll_down','scroll_up','read_screen'];
 function fixActionShape(text) {
   if (typeof text !== 'string') return text;
   let t = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
