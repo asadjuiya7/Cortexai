@@ -96,6 +96,7 @@ class WakeWordService : Service() {
     private var overlayRoot: LinearLayout? = null
     private var overlayStatus: TextView? = null
     private var overlayBody: TextView? = null
+    private var orb: OrbView? = null
 
     private val history = ArrayList<Pair<String, String>>()
     private val restartRunnable = Runnable { beginListening() }
@@ -120,7 +121,7 @@ class WakeWordService : Service() {
                 "If the user asks to change, fix or add a feature of the Cortex app or its software itself (not a personal preference), reply with ONLY this JSON: {\"dev_request\":\"<clear detailed English description of the change>\",\"target\":\"android\" or \"pc\" or \"both\"}. " +
                 "Always follow the remembered items listed at the end of this prompt, and if a remembered shortcut says a phrase should trigger phone actions, perform those actions. " +
                 DeviceControl.PROMPT
-        const val IDLE_CLOSE_MS = 120000L
+        const val IDLE_CLOSE_MS = 15000L
         const val VOSK_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
         const val VOSK_DIR = "vosk-model-small-en-us-0.15"
         const val VOSK_GRAMMAR =
@@ -724,7 +725,7 @@ class WakeWordService : Service() {
         } else {
             mode = Mode.COMMAND
             showStatus("Listening...")
-            showBody("Go ahead, I'm listening.")
+            showBody("")
             scheduleRestart(50)
         }
     }
@@ -978,15 +979,10 @@ class WakeWordService : Service() {
             showBody(msg)
             if (history.isNotEmpty()) history.removeAt(history.size - 1)
             lastActivityAt = System.currentTimeMillis()
-            // Keep the popup open, wait a few seconds, then listen again.
+            // Show the message for a few seconds, then close the popup.
             handler.postDelayed({
-                if (!stopped && mode == Mode.BUSY) {
-                    mode = Mode.COMMAND
-                    lastActivityAt = System.currentTimeMillis()
-                    showStatus("Listening...")
-                    scheduleRestart(100)
-                }
-            }, 8000)
+                if (!stopped && mode == Mode.BUSY) endConversation()
+            }, 6000)
             return
         }
         if (handleDevRequest(raw)) return
@@ -1166,6 +1162,16 @@ class WakeWordService : Service() {
         if (overlayRoot == null) {
             mode = Mode.WAKE
             scheduleRestart(100)
+            return
+        }
+        // Task finished and Cortex is not waiting for an answer: close the popup.
+        val lastSaid = history.lastOrNull { it.first == "assistant" }?.second?.trim() ?: ""
+        val waitingForAnswer = lastSaid.endsWith("?") || lastSaid.endsWith("\u061F") ||
+            lastSaid.startsWith("Which contact")
+        if (!waitingForAnswer) {
+            handler.postDelayed({
+                if (!stopped && mode == Mode.BUSY) endConversation()
+            }, 1200)
             return
         }
         mode = Mode.COMMAND
@@ -1390,69 +1396,55 @@ class WakeWordService : Service() {
         if (overlayRoot != null) return
         try {
             val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val screenW = resources.displayMetrics.widthPixels
 
+            // Siri style: a text bubble (only when there is something to say) above a glowing orb at the bottom.
             val root = LinearLayout(this)
             root.orientation = LinearLayout.VERTICAL
-            root.setPadding(dp(16), dp(12), dp(16), dp(14))
-            val bg = GradientDrawable()
-            bg.setColor(Color.parseColor("#F00B1220"))
-            bg.cornerRadius = dp(20).toFloat()
-            bg.setStroke(dp(1), Color.parseColor("#4FD6E8"))
-            root.background = bg
-
-            val top = LinearLayout(this)
-            top.orientation = LinearLayout.HORIZONTAL
-
-            val title = TextView(this)
-            title.text = "CORTEX"
-            title.setTextColor(Color.parseColor("#4FD6E8"))
-            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            title.letterSpacing = 0.2f
-            val titleParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            top.addView(title, titleParams)
-
-            val status = TextView(this)
-            status.text = "Listening..."
-            status.setTextColor(Color.parseColor("#9AA4B2"))
-            status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            status.setPadding(0, 0, dp(14), 0)
-            top.addView(status)
-
-            val close = TextView(this)
-            close.text = "✕"
-            close.setTextColor(Color.WHITE)
-            close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            close.setOnClickListener { endConversation() }
-            top.addView(close)
-
-            root.addView(top)
+            root.gravity = Gravity.CENTER_HORIZONTAL
+            root.setPadding(dp(8), dp(4), dp(8), dp(4))
 
             val body = TextView(this)
             body.text = ""
             body.setTextColor(Color.WHITE)
-            body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            body.setPadding(0, dp(8), 0, 0)
-            body.visibility = View.VISIBLE
-            root.addView(body)
+            body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            body.setPadding(dp(16), dp(12), dp(16), dp(12))
+            body.maxWidth = (screenW * 0.90f).toInt()
+            val bubble = GradientDrawable()
+            bubble.setColor(Color.parseColor("#E60B1220"))
+            bubble.cornerRadius = dp(20).toFloat()
+            bubble.setStroke(dp(1), Color.parseColor("#334FD6E8"))
+            body.background = bubble
+            body.visibility = View.GONE
+            val bodyParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            bodyParams.bottomMargin = dp(10)
+            root.addView(body, bodyParams)
 
-            val width = (resources.displayMetrics.widthPixels * 0.92f).toInt()
+            val orbView = OrbView(this)
+            orbView.setOnClickListener { endConversation() }
+            root.addView(orbView, LinearLayout.LayoutParams(dp(96), dp(96)))
+
             val params = WindowManager.LayoutParams(
-                width,
+                WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT
             )
-            params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            params.y = dp(48)
+            params.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            params.y = dp(36)
 
             wm.addView(root, params)
             overlayRoot = root
-            overlayStatus = status
+            overlayStatus = null
             overlayBody = body
+            orb = orbView
         } catch (e: Exception) {
             overlayRoot = null
+            orb = null
         }
     }
 
@@ -1466,14 +1458,22 @@ class WakeWordService : Service() {
         overlayRoot = null
         overlayStatus = null
         overlayBody = null
+        orb = null
     }
 
+    /** The status word decides how the orb moves: calm while listening, fast while thinking, pulsing while speaking. */
     private fun showStatus(t: String) {
-        overlayStatus?.text = t
+        orb?.state = when {
+            t.startsWith("Thinking") || t.startsWith("Working") -> OrbView.State.THINK
+            t.startsWith("Listening") -> OrbView.State.LISTEN
+            else -> OrbView.State.SPEAK
+        }
     }
 
     private fun showBody(t: String) {
-        overlayBody?.text = t
+        val b = overlayBody ?: return
+        b.text = t
+        b.visibility = if (t.isBlank()) View.GONE else View.VISIBLE
     }
 
     // ---------------------------------------------------------------- notification

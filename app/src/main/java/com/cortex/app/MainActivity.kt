@@ -241,6 +241,23 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // ---- Schedule screen
+        @android.webkit.JavascriptInterface
+        fun listTasks(): String = Scheduler.listJson(this@MainActivity)
+
+        @android.webkit.JavascriptInterface
+        fun addTask(whenSpec: String?, repeat: String?, action: String?, param: String?, say: String?): String =
+            Scheduler.addFromParam(
+                this@MainActivity,
+                listOf(whenSpec ?: "", repeat ?: "once", action ?: "remind", param ?: "", say ?: "").joinToString("|")
+            )
+
+        @android.webkit.JavascriptInterface
+        fun cancelTask(id: String?): String = Scheduler.cancelById(this@MainActivity, id?.toLongOrNull() ?: -1L)
+
+        @android.webkit.JavascriptInterface
+        fun deletePlanNamed(name: String?): String = Scheduler.deletePlan(this@MainActivity, name ?: "")
+
         @android.webkit.JavascriptInterface
         fun isNativeApp(): Boolean = true
     }

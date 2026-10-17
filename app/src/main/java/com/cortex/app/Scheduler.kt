@@ -222,6 +222,26 @@ object Scheduler {
         return sb.toString() + "."
     }
 
+    /** All tasks as JSON for the app's Schedule screen. */
+    fun listJson(ctx: Context): String {
+        val arr = JSONArray()
+        for (t in load(ctx).sortedBy { it.whenMs }) {
+            arr.put(
+                JSONObject().put("id", t.id).put("label", t.label).put("whenText", whenText(t.whenMs))
+                    .put("repeat", t.repeat).put("action", t.action).put("param", t.param).put("group", t.group)
+            )
+        }
+        return arr.toString()
+    }
+
+    fun cancelById(ctx: Context, id: Long): String {
+        val list = load(ctx)
+        val t = list.find { it.id == id } ?: return "That task is already gone."
+        disarm(ctx, id)
+        save(ctx, list.filter { it.id != id })
+        return "Cancelled: ${t.label}."
+    }
+
     fun cancel(ctx: Context, what: String): String {
         val q = what.trim().lowercase(Locale.ROOT)
         val list = load(ctx)
