@@ -106,7 +106,7 @@ class WakeWordService : Service() {
         const val CHANNEL_ID = "cortex_wake_channel"
         const val NOTIF_ID = 42
         const val WORKER_URL = "https://cortexai.asadjuiya7.workers.dev"
-        val SYSTEM_PROMPT =
+        val SYSTEM_PROMPT: String get() =
             "You are Cortex, a friendly voice assistant. Your developer and creator is Muhammad Asad Ashraf. " +
                 "When asked who made or created you, always answer Muhammad Asad Ashraf. " +
                 "Never say you were made by Google, OpenAI or Anthropic and never mention Gemini, GPT or Claude. " +
@@ -137,7 +137,7 @@ class WakeWordService : Service() {
         const val SPK_THRESHOLD = 0.65
         val SAFE_WHEN_LOCKED = setOf(
             "flashlight_on", "flashlight_off", "volume_up", "volume_down", "mute", "unmute",
-            "battery_status", "set_alarm", "set_timer"
+            "battery_status", "set_alarm", "set_timer", "schedule", "list_tasks", "cancel_task"
         )
         val VOSK_WAKE = Regex("""\b(?:cortex|cortes|codex)\b""")
         val STOP_PATTERN = Regex("""(?:^|\s)(?:stop|bye|goodbye|cancel|dismiss|close)(?:\s|$)""")
