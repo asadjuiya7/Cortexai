@@ -1424,7 +1424,7 @@ class WakeWordService : Service() {
 
             val orbView = OrbView(this)
             orbView.setOnClickListener { endConversation() }
-            root.addView(orbView, LinearLayout.LayoutParams(dp(96), dp(96)))
+            root.addView(orbView, LinearLayout.LayoutParams(dp(112), dp(112)))
 
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,

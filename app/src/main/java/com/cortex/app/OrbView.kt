@@ -6,13 +6,18 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
 import android.view.View
 import android.view.animation.LinearInterpolator
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** The glowing Siri-style orb shown at the bottom of the screen while Cortex listens, thinks and speaks. */
+/**
+ * The Cortex planet (the same globe, orbit ring and orange moon as the app icon), glowing at the bottom
+ * of the screen while Cortex listens, thinks and speaks.
+ */
 class OrbView(ctx: Context) : View(ctx) {
 
     enum class State { LISTEN, THINK, SPEAK }
@@ -21,17 +26,20 @@ class OrbView(ctx: Context) : View(ctx) {
 
     private var t = 0f
     private var anim: ValueAnimator? = null
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val tints = intArrayOf(
-        Color.parseColor("#4FD6E8"), // cyan
-        Color.parseColor("#8B7BFF"), // violet
-        Color.parseColor("#FF6FB5")  // pink
-    )
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+
+    private val cyan = Color.parseColor("#4FD6E8")
+    private val amber = Color.parseColor("#E8A33D")
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         anim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 4000L
+            duration = 6000L
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
             addUpdateListener {
@@ -48,7 +56,7 @@ class OrbView(ctx: Context) : View(ctx) {
         super.onDetachedFromWindow()
     }
 
-    private fun withAlpha(color: Int, a: Int): Int = Color.argb(a, Color.red(color), Color.green(color), Color.blue(color))
+    private fun a(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat()
@@ -56,45 +64,72 @@ class OrbView(ctx: Context) : View(ctx) {
         if (w <= 0f || h <= 0f) return
         val cx = w / 2f
         val cy = h / 2f
-        val base = minOf(w, h) / 2f
+        val size = minOf(w, h)
+        val r = size * 0.30f // planet radius
+        val tau = 2f * Math.PI.toFloat()
+
+        // speed in whole turns per 6 seconds, so the loop never jumps
         val turns = when (state) {
             State.LISTEN -> 1
-            State.THINK -> 3
+            State.THINK -> 4
             State.SPEAK -> 2
         }
-        val ph = t * 2f * Math.PI.toFloat() * turns
+        val ph = t * tau * turns
         val pulse = when (state) {
-            State.LISTEN -> 0.90f + 0.06f * sin(ph)
-            State.THINK -> 0.84f + 0.08f * sin(ph)
-            State.SPEAK -> 0.80f + 0.14f * sin(ph * 2f)
-        }
-        val spread = if (state == State.THINK) 0.34f else 0.24f
-
-        // soft outer glow
-        paint.shader = RadialGradient(
-            cx, cy, base * pulse,
-            intArrayOf(withAlpha(tints[0], 90), withAlpha(tints[1], 0)), null, Shader.TileMode.CLAMP
-        )
-        c.drawCircle(cx, cy, base * pulse, paint)
-
-        // three coloured blobs circling the centre
-        for (i in 0 until 3) {
-            val a = ph + i * 2f * Math.PI.toFloat() / 3f
-            val bx = cx + cos(a) * base * spread
-            val by = cy + sin(a) * base * spread
-            val r = base * 0.60f * pulse
-            paint.shader = RadialGradient(
-                bx, by, r, intArrayOf(withAlpha(tints[i], 190), withAlpha(tints[i], 0)), null, Shader.TileMode.CLAMP
-            )
-            c.drawCircle(bx, by, r, paint)
+            State.LISTEN -> 1f + 0.03f * sin(t * tau * 2f)
+            State.THINK -> 1f + 0.05f * sin(t * tau * 4f)
+            State.SPEAK -> 1f + 0.09f * sin(t * tau * 6f)
         }
 
-        // bright core
-        val core = base * 0.30f * (0.9f + 0.1f * pulse)
-        paint.shader = RadialGradient(
-            cx, cy, core, intArrayOf(Color.argb(235, 255, 255, 255), Color.argb(0, 255, 255, 255)), null, Shader.TileMode.CLAMP
-        )
-        c.drawCircle(cx, cy, core, paint)
-        paint.shader = null
+        // soft glow behind the planet
+        val glowR = size * 0.50f * pulse
+        fill.shader = RadialGradient(cx, cy, glowR, intArrayOf(a(cyan, 120), a(cyan, 40), a(cyan, 0)), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, glowR, fill)
+        fill.shader = null
+
+        // outer ring of the planet
+        line.color = cyan
+        line.strokeWidth = r * 0.11f
+        c.drawCircle(cx, cy, r, line)
+
+        // equator
+        line.color = a(cyan, 165)
+        line.strokeWidth = r * 0.06f
+        rect.set(cx - r, cy - r * 0.37f, cx + r, cy + r * 0.37f)
+        c.drawOval(rect, line)
+
+        // two meridians that turn, so the globe seems to spin
+        for (k in 0 until 2) {
+            val ang = ph * 0.5f + k * (Math.PI.toFloat() / 2f)
+            val rx = r * (0.18f + 0.82f * abs(cos(ang)))
+            rect.set(cx - rx, cy - r, cx + rx, cy + r)
+            line.color = a(cyan, if (k == 0) 165 else 110)
+            c.drawOval(rect, line)
+        }
+
+        // tilted orbit ring with the orange moon travelling along it
+        c.save()
+        c.rotate(38f, cx, cy)
+        line.color = a(cyan, 105)
+        line.strokeWidth = r * 0.05f
+        rect.set(cx - r, cy - r * 0.37f, cx + r, cy + r * 0.37f)
+        c.drawOval(rect, line)
+        val ma = ph * 1.0f + 1.2f
+        val mx = cx + r * cos(ma)
+        val my = cy + r * 0.37f * sin(ma)
+        fill.shader = RadialGradient(mx, my, r * 0.36f, intArrayOf(a(amber, 200), a(amber, 0)), null, Shader.TileMode.CLAMP)
+        c.drawCircle(mx, my, r * 0.36f, fill)
+        fill.shader = null
+        fill.color = amber
+        c.drawCircle(mx, my, r * 0.13f, fill)
+        c.restore()
+
+        // glowing cyan core
+        val core = r * 0.23f * pulse
+        fill.shader = RadialGradient(cx, cy, core * 2.4f, intArrayOf(a(cyan, 170), a(cyan, 0)), null, Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, core * 2.4f, fill)
+        fill.shader = null
+        fill.color = cyan
+        c.drawCircle(cx, cy, core, fill)
     }
 }
