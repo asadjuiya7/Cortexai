@@ -78,7 +78,7 @@ async function openaiCompat(url, key, model, chat) {
 
 // Backup models sometimes write {"open_app":"Chrome"} instead of
 // {"device_action":"open_app","param":"Chrome"}. Fix that shape here.
-const PHONE_ACTIONS = ['open_app','flashlight_on','flashlight_off','volume_up','volume_down','mute','unmute','call','send_sms','whatsapp_message','send_email','set_alarm','set_timer','web_search','youtube_search','app_search','navigate','open_url','battery_status','wifi_settings','bluetooth_settings','go_home','go_back','recents','notifications','lock_screen','screenshot','click_text','type_text','scroll_down','scroll_up','read_screen'];
+const PHONE_ACTIONS = ['open_app','flashlight_on','flashlight_off','volume_up','volume_down','mute','unmute','call','send_sms','whatsapp_message','send_email','set_alarm','set_timer','web_search','youtube_search','app_search','schedule','list_tasks','cancel_task','navigate','open_url','battery_status','wifi_settings','bluetooth_settings','go_home','go_back','recents','notifications','lock_screen','screenshot','click_text','type_text','scroll_down','scroll_up','read_screen'];
 function fixActionShape(text) {
   if (typeof text !== 'string') return text;
   let t = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -339,7 +339,7 @@ async function liveContext(env, text) {
       if (city) data = await weatherNow(city);
     }
     if (!data && /\b(news|khabar|khabrein|latest|breaking|score|price|rate|today|aaj ki|abhi|current|who is|what is the|kya hai|kaun hai|search|dhoond|dhundo|google)\b/i.test(lower) &&
-        !/\b(open|call|whatsapp|flashlight|volume|alarm|timer|sms|message|youtube|play ?store|spotify|daraz|amazon|maps|facebook|instagram|tiktok|linkedin|pinterest|app)\b/i.test(lower)) {
+        !/\b(remind|reminder|schedule|scheduled|daily|baje|bajay|minutes?|hours?|later|roz|yaad dila\w*|open|call|whatsapp|flashlight|volume|alarm|timer|sms|message|youtube|play ?store|spotify|daraz|amazon|maps|facebook|instagram|tiktok|linkedin|pinterest|app)\b/i.test(lower)) {
       const q = text.replace(/\b(please|can you|could you|cortex|search for|search|dhoond(?:o)?|dhundo|google|karo|kro|batao|bata do)\b/gi, ' ').replace(/\s+/g, ' ').trim() || text;
       data = await webSearchData(env, q);
     }
