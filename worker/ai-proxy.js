@@ -424,6 +424,82 @@ export default {
       }
     }
 
+    // Natural human voice for replies. English -> Workers AI (Deepgram Aura, then MeloTTS);
+    // Urdu / Hindi (or when Aura is unavailable) -> Gemini speech. Returns audio the app plays directly.
+    if (body.action === 'tts') {
+      if (!body.license_key || !body.text) return json({ error: 'bad_request' }, 400);
+      let lic;
+      try { lic = await checkLicense(body.license_key); } catch (e) { return json({ error: 'license_check_failed' }, 500); }
+      if (!lic || !lic.valid) return json({ error: 'invalid_license' }, 403);
+      const text = String(body.text).slice(0, 600);
+      const nonLatin = /[؀-ۿऀ-ॿ]/.test(text);
+      const audioResp = (buf, type) => new Response(buf, { headers: { 'Content-Type': type, ...CORS_HEADERS } });
+      const toBuf = async (out) => {
+        if (!out) return null;
+        if (out instanceof ArrayBuffer) return out;
+        if (out instanceof Uint8Array) return out.buffer;
+        if (typeof out.arrayBuffer === 'function') return await out.arrayBuffer();
+        if (out.audio && typeof out.audio === 'string') {
+          const bin = atob(out.audio); const u = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          return u.buffer;
+        }
+        return null;
+      };
+      const sniff = (buf) => {
+        const h = new Uint8Array(buf.slice(0, 4));
+        return (h[0] === 0x52 && h[1] === 0x49) ? 'audio/wav' : 'audio/mpeg';
+      };
+      // 1) Gemini speech (best for Urdu/Hindi, very natural for English too)
+      const geminiFirst = nonLatin;
+      const tryGemini = async () => {
+        if (!env.GEMINI_API_KEY) return null;
+        for (const model of ['gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts']) {
+          try {
+            const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: 'Say this in a warm, relaxed, natural human voice, like a friendly person talking: ' + text }] }],
+                generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } } },
+              }),
+            });
+            const d = await r.json();
+            const part = d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts && d.candidates[0].content.parts.find((x) => x.inlineData);
+            if (!part) continue;
+            const bin = atob(part.inlineData.data); const pcm = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
+            const wav = new Uint8Array(44 + pcm.length); const dv = new DataView(wav.buffer);
+            const w = (o, str) => { for (let i = 0; i < str.length; i++) wav[o + i] = str.charCodeAt(i); };
+            w(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length, true); w(8, 'WAVE'); w(12, 'fmt ');
+            dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+            dv.setUint32(24, 24000, true); dv.setUint32(28, 48000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+            w(36, 'data'); dv.setUint32(40, pcm.length, true); wav.set(pcm, 44);
+            return wav.buffer;
+          } catch (e) { /* try next */ }
+        }
+        return null;
+      };
+      const tryCf = async () => {
+        if (!env.AI || nonLatin) return null;
+        for (const [model, args] of [
+          ['@cf/deepgram/aura-1', { text, speaker: 'luna' }],
+          ['@cf/myshell-ai/melotts', { prompt: text, lang: 'en' }],
+        ]) {
+          try {
+            const out = await env.AI.run(model, args);
+            const buf = await toBuf(out);
+            if (buf && buf.byteLength > 500) return buf;
+          } catch (e) { /* try next */ }
+        }
+        return null;
+      };
+      let buf = geminiFirst ? await tryGemini() : await tryCf();
+      if (!buf) buf = geminiFirst ? await tryCf() : await tryGemini();
+      if (!buf) return json({ error: 'tts_unavailable' }, 503);
+      return audioResp(buf, sniff(buf));
+    }
+
     // Create an image from a prompt (Gemini image model). Uses the same
     // GEMINI_API_KEY as chat. Needs a valid license, like every other request.
     // NOTE: Google may give free-tier keys zero image quota — that case is
