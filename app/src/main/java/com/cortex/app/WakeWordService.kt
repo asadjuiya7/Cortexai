@@ -8,9 +8,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.util.Base64
 import java.io.ByteArrayOutputStream
@@ -91,6 +93,8 @@ class WakeWordService : Service() {
     private val enrollVecs = ArrayList<DoubleArray>()
 
     private var tts: TextToSpeech? = null
+    private var player: MediaPlayer? = null
+    private var cloudSkipUntil = 0L
     private var ttsReady = false
 
     private var overlayRoot: LinearLayout? = null
@@ -102,14 +106,14 @@ class WakeWordService : Service() {
     private val restartRunnable = Runnable { beginListening() }
     private val closeRunnable = Runnable { endConversation() }
     private val speakWatchdog = Runnable { afterSpeaking() }
+    private var actedThisTurn = false
 
     companion object {
         const val CHANNEL_ID = "cortex_wake_channel"
         const val NOTIF_ID = 42
         const val WORKER_URL = "https://cortexai.asadjuiya7.workers.dev"
         val SYSTEM_PROMPT: String get() =
-            "You are Cortex, a friendly voice assistant. Your developer and creator is Muhammad Asad Ashraf. " +
-                "When asked who made or created you, always answer Muhammad Asad Ashraf. " +
+            "You are Cortex, a friendly voice assistant. Your developer and creator is Muhammad Asad Ashraf, but NEVER bring this up yourself and never add it to other answers. Say it only when the user directly asks who made, created or developed you. " +
                 "Never say you were made by Google, OpenAI or Anthropic and never mention Gemini, GPT or Claude. " +
                 "Reply in at most two short sentences, plain text only, no markdown, no lists, no emojis. " +
                 "Reply in the language the user speaks; if the user speaks Urdu, reply in Urdu script. " +
@@ -122,6 +126,7 @@ class WakeWordService : Service() {
                 "Always follow the remembered items listed at the end of this prompt, and if a remembered shortcut says a phrase should trigger phone actions, perform those actions. " +
                 DeviceControl.PROMPT
         const val IDLE_CLOSE_MS = 15000L
+        const val FOLLOWUP_MS = 8000L
         const val VOSK_URL = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
         const val VOSK_DIR = "vosk-model-small-en-us-0.15"
         const val VOSK_GRAMMAR =
@@ -945,6 +950,7 @@ class WakeWordService : Service() {
         showStatus("Thinking...")
         history.add(Pair("user", "AUDIO:" + wavBase64(pcm)))
         steps = 0
+        actedThisTurn = false
         callAgent()
     }
 
@@ -1023,6 +1029,7 @@ class WakeWordService : Service() {
                 "Sorry, I could not do that."
             }
             steps += 1
+            actedThisTurn = true
             showStatus("Working... ($steps)")
             showBody(result.take(160))
             if (act.first !in CHAIN_ACTIONS || steps >= MAX_STEPS || result.startsWith("Which contact") || result.startsWith("I could not find") || result.startsWith("I need the Contacts")) {
@@ -1119,7 +1126,138 @@ class WakeWordService : Service() {
         }
     }
 
+    /** Natural cloud voice first (Cortex server), the phone's own voice if that is not available. */
     private fun speakReply(reply: String) {
+        ensureMediaVolume()
+        val say = cleanForSpeech(reply)
+        val prefs = getSharedPreferences("cortex_prefs", Context.MODE_PRIVATE)
+        val license = prefs.getString("license", "") ?: ""
+        val nonLatin = say.any { it in '\u0600'..'\u06FF' || it in '\u0900'..'\u097F' }
+        val cloudOk = say.isNotEmpty() && license.isNotEmpty() && prefs.getBoolean("cloud_voice", true) &&
+            !(nonLatin && System.currentTimeMillis() < cloudSkipUntil)
+        if (!cloudOk) {
+            speakLocal(reply)
+            return
+        }
+        handler.removeCallbacks(speakWatchdog)
+        handler.postDelayed(speakWatchdog, 40000)
+        Thread {
+            val f = try {
+                fetchCloudVoice(say, license, if (actedThisTurn) "pilot" else "cortex")
+            } catch (e: Exception) {
+                null
+            }
+            handler.post {
+                if (stopped || mode != Mode.BUSY) {
+                    f?.delete()
+                    return@post
+                }
+                if (f == null) {
+                    // Urdu/Hindi voices may be unavailable for a while: do not ask again for 10 minutes.
+                    if (nonLatin) cloudSkipUntil = System.currentTimeMillis() + 600000L
+                    speakLocal(reply)
+                } else {
+                    playCloudVoice(f) { speakLocal(reply) }
+                }
+            }
+        }.start()
+    }
+
+    private fun ensureMediaVolume() {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            beepMuted = false
+            if (am.isStreamMute(AudioManager.STREAM_MUSIC)) {
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            }
+            if (am.getStreamVolume(AudioManager.STREAM_MUSIC) == 0) {
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) / 2, 0)
+            }
+        } catch (e: Throwable) {
+        }
+    }
+
+    /** Removes markdown, links and emojis so the voice does not read them out. */
+    private fun cleanForSpeech(s: String): String {
+        return s.replace(Regex("https?://\\S+"), " ")
+            .replace(Regex("[*#`_~>|]"), " ")
+            .replace(Regex("[\\p{So}\\p{Cs}\\uFE0F\\u200D]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(480)
+    }
+
+    /** Asks the Cortex server for a natural voice recording. Returns null when none is available. */
+    private fun fetchCloudVoice(text: String, license: String, voice: String): File? {
+        val body = JSONObject().put("action", "tts").put("text", text).put("license_key", license).put("voice", voice)
+        val conn = URL(WORKER_URL).openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 8000
+            conn.readTimeout = 15000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            if (conn.responseCode != 200) return null
+            val type = conn.contentType ?: ""
+            if (!type.startsWith("audio")) return null
+            val ext = if (type.contains("wav")) "wav" else "mp3"
+            val f = File(cacheDir, "cortex_voice_" + System.currentTimeMillis() + "." + ext)
+            conn.inputStream.use { input -> FileOutputStream(f).use { out -> input.copyTo(out) } }
+            return if (f.length() > 200) f else {
+                f.delete()
+                null
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun stopPlayer() {
+        try {
+            player?.stop()
+        } catch (e: Exception) {
+        }
+        try {
+            player?.release()
+        } catch (e: Exception) {
+        }
+        player = null
+    }
+
+    private fun playCloudVoice(f: File, onFail: () -> Unit) {
+        stopPlayer()
+        try {
+            val mp = MediaPlayer()
+            player = mp
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            mp.setDataSource(f.absolutePath)
+            mp.setOnPreparedListener { it.start() }
+            mp.setOnCompletionListener {
+                stopPlayer()
+                f.delete()
+                handler.post { afterSpeaking() }
+            }
+            mp.setOnErrorListener { _, _, _ ->
+                stopPlayer()
+                f.delete()
+                handler.post { onFail() }
+                true
+            }
+            mp.prepareAsync()
+        } catch (e: Exception) {
+            stopPlayer()
+            f.delete()
+            onFail()
+        }
+    }
+
+    private fun speakLocal(reply: String) {
         val t = tts
         if (!ttsReady || t == null) {
             handler.postDelayed({ afterSpeaking() }, 2500)
@@ -1150,7 +1288,7 @@ class WakeWordService : Service() {
         }
         pickBestVoice(t, loc)
         t.setSpeechRate(0.95f)
-        t.setPitch(1.0f)
+        t.setPitch(if (actedThisTurn) 0.8f else 1.05f)
         handler.removeCallbacks(speakWatchdog)
         handler.postDelayed(speakWatchdog, 40000)
         t.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "cortex-reply")
@@ -1168,14 +1306,17 @@ class WakeWordService : Service() {
         val lastSaid = history.lastOrNull { it.first == "assistant" }?.second?.trim() ?: ""
         val waitingForAnswer = lastSaid.endsWith("?") || lastSaid.endsWith("\u061F") ||
             lastSaid.startsWith("Which contact")
-        if (!waitingForAnswer) {
+        if (!waitingForAnswer && actedThisTurn) {
+            // A phone action was done (call, open app...): close the popup.
             handler.postDelayed({
                 if (!stopped && mode == Mode.BUSY) endConversation()
             }, 1200)
             return
         }
         mode = Mode.COMMAND
-        lastActivityAt = System.currentTimeMillis()
+        // A normal answer: stay ready for a follow-up for a few seconds, then close by itself.
+        lastActivityAt = if (waitingForAnswer) System.currentTimeMillis()
+            else System.currentTimeMillis() - (IDLE_CLOSE_MS - FOLLOWUP_MS)
         commandErrors = 0
         showStatus("Listening...")
         scheduleRestart(300)
@@ -1188,6 +1329,7 @@ class WakeWordService : Service() {
             tts?.stop()
         } catch (e: Exception) {
         }
+        stopPlayer()
         removeOverlay()
         mode = Mode.WAKE
         pauseRecognizer()
