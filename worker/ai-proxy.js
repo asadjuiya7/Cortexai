@@ -432,6 +432,16 @@ export default {
       try { lic = await checkLicense(body.license_key); } catch (e) { return json({ error: 'license_check_failed' }, 500); }
       if (!lic || !lic.valid) return json({ error: 'invalid_license' }, 403);
       const text = String(body.text).slice(0, 600);
+      // One voice per agent: male agents get male voices, female agents female voices.
+      const VOICES = {
+        scout: { aura: 'asteria', gem: 'Kore', style: 'a friendly young woman' },
+        scribe: { aura: 'luna', gem: 'Aoede', style: 'a warm, soft-spoken woman' },
+        coder: { aura: 'arcas', gem: 'Puck', style: 'a relaxed young man' },
+        sage: { aura: 'zeus', gem: 'Charon', style: 'a calm, deep-voiced older man' },
+        pilot: { aura: 'orion', gem: 'Fenrir', style: 'a confident, clear man' },
+        cortex: { aura: 'luna', gem: 'Aoede', style: 'a warm, friendly woman' },
+      };
+      const vc = VOICES[String(body.voice || 'cortex')] || VOICES.cortex;
       const nonLatin = /[؀-ۿऀ-ॿ]/.test(text);
       const audioResp = (buf, type) => new Response(buf, { headers: { 'Content-Type': type, ...CORS_HEADERS } });
       const toBuf = async (out) => {
@@ -460,8 +470,8 @@ export default {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
               body: JSON.stringify({
-                contents: [{ parts: [{ text: 'Say this in a warm, relaxed, natural human voice, like a friendly person talking: ' + text }] }],
-                generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } } },
+                contents: [{ parts: [{ text: 'Say this naturally, in the voice of ' + vc.style + ', like a real person talking: ' + text }] }],
+                generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: vc.gem } } } },
               }),
             });
             const d = await r.json();
@@ -483,7 +493,7 @@ export default {
       const tryCf = async () => {
         if (!env.AI || nonLatin) return null;
         for (const [model, args] of [
-          ['@cf/deepgram/aura-1', { text, speaker: 'luna' }],
+          ['@cf/deepgram/aura-1', { text, speaker: vc.aura }],
           ['@cf/myshell-ai/melotts', { prompt: text, lang: 'en' }],
         ]) {
           try {
