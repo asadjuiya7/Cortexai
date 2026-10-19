@@ -19,6 +19,7 @@ import android.view.ViewGroup
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
+import android.webkit.ValueCallback
 import android.webkit.WebViewClient
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
@@ -31,6 +32,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
     private var pendingVoiceCommand: String? = null
     private var printView: WebView? = null
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private val FILE_CHOOSER_CODE = 7421
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +51,28 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread { request.grant(request.resources) }
                 }
 
+                override fun onShowFileChooser(
+                    view: WebView?,
+                    callback: ValueCallback<Array<Uri>>?,
+                    params: FileChooserParams?
+                ): Boolean {
+                    filePathCallback?.onReceiveValue(null)
+                    filePathCallback = callback
+                    return try {
+                        val i = Intent(Intent.ACTION_GET_CONTENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "application/pdf", "text/*", "application/json"))
+                        }
+                        startActivityForResult(Intent.createChooser(i, "Choose file"), FILE_CHOOSER_CODE)
+                        true
+                    } catch (e: Exception) {
+                        filePathCallback?.onReceiveValue(null)
+                        filePathCallback = null
+                        false
+                    }
+                }
+
                 override fun onGeolocationPermissionsShowPrompt(
                     origin: String?,
                     callback: GeolocationPermissions.Callback?
@@ -62,6 +87,20 @@ class MainActivity : AppCompatActivity() {
 
         requestRuntimePermissions()
         handleIntent(intent)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == FILE_CHOOSER_CODE) {
+            val r: Array<Uri>? = if (resultCode == RESULT_OK && data != null) {
+                val clip = data.clipData
+                if (clip != null) Array(clip.itemCount) { clip.getItemAt(it).uri }
+                else data.data?.let { arrayOf(it) }
+            } else null
+            filePathCallback?.onReceiveValue(r)
+            filePathCallback = null
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
