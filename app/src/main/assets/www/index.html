@@ -3682,7 +3682,7 @@ button.sphere:hover {
 }
 
 
-.cxo{position:relative;height:540px;border-radius:16px;overflow:hidden;background:radial-gradient(ellipse at 50% 0%,rgba(79,214,232,.08),transparent 65%),#0a0f17;border:1px solid var(--border);flex-shrink:0}
+.cxo{position:relative;max-width:640px;margin-left:auto;margin-right:auto;width:100%;height:1500px;border-radius:16px;overflow:hidden;background:radial-gradient(ellipse at 50% 0%,rgba(79,214,232,.08),transparent 65%),#0a0f17;border:1px solid var(--border);flex-shrink:0}
 .cxo__floor{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);background-size:28px 28px;pointer-events:none}
 .cxo__board{position:absolute;left:50%;top:10px;transform:translateX(-50%);width:120px;height:26px;border-radius:5px;background:#0f1722;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;color:var(--cyan);box-shadow:0 0 12px rgba(79,214,232,.15)}
 .cxo__prop{position:absolute;transform:translate(-50%,-50%);font-size:22px;pointer-events:none;opacity:.9}
@@ -4012,16 +4012,18 @@ cxAudio=new Audio(u);cxAudio.onended=()=>{URL.revokeObjectURL(u);done()};cxAudio
 await cxAudio.play()}catch(e){local()}}
 
 var CXO={
-scout:{desk:[22,28],icon:"\u{1F50D}",jobs:["Searching the web…","Comparing sources…","Reading reports…","Taking notes…"]},
-scribe:{desk:[72,28],icon:"✍️",jobs:["Drafting an email…","Polishing a message…","Editing notes…","Fixing grammar…"]},
-coder:{desk:[22,57],icon:"\u{1F4BB}",jobs:["Writing code…","Fixing a bug…","Reviewing a pull request…","Running tests…"]},
-sage:{desk:[72,57],icon:"\u{1F5C2}️",jobs:["Planning your day…","Weighing options…","Writing a to-do list…","Thinking it through…"]},
-pilot:{desk:[47,86],icon:"\u{1F4F1}",jobs:["Opening apps…","Checking the battery…","Setting an alarm…","Testing Wi-Fi…"]}};
-var CXSPOTS=[{x:47,y:27,t:"Checking the board \u{1F4CB}"},{x:47,y:68,t:"☕ Coffee break"},{x:8,y:70,t:"\u{1F6B6} Stretching legs"},{x:90,y:72,t:"\u{1F6B6} Taking a walk"},{x:47,y:46,t:"\u{1F914} Thinking…"}];
+scout:{desk:[24,11.0],icon:"\u{1F50D}",jobs:["Searching the web…","Comparing sources…","Reading reports…","Taking notes…"]},
+scribe:{desk:[74,11.0],icon:"✍️",jobs:["Drafting an email…","Polishing a message…","Editing notes…","Fixing grammar…"]},
+coder:{desk:[24,20.6],icon:"\u{1F4BB}",jobs:["Writing code…","Fixing a bug…","Reviewing a pull request…","Running tests…"]},
+sage:{desk:[74,20.6],icon:"\u{1F5C2}️",jobs:["Planning your day…","Weighing options…","Writing a to-do list…","Thinking it through…"]},
+pilot:{desk:[24,30.1],icon:"\u{1F4F1}",jobs:["Opening apps…","Checking the battery…","Setting an alarm…","Testing Wi-Fi…"]}};Object.assign(CXO,{"sp-planner":{desk:[74,30.1],icon:"\ud83d\uddfa\ufe0f",jobs:["Drawing a plan…", "Ordering the steps…", "Listing risks…", "Checking the scope…"]},"sp-architect":{desk:[24,39.7],icon:"\ud83c\udfd7\ufe0f",jobs:["Sketching the design…", "Tracing the data flow…", "Comparing two options…", "Marking the seams…"]},"sp-code-reviewer":{desk:[74,39.7],icon:"\ud83d\udd0e",jobs:["Reading a diff…", "Checking edge cases…", "Spotting a bug…", "Writing review notes…"]},"sp-security-reviewer":{desk:[24,49.2],icon:"\ud83d\udee1\ufe0f",jobs:["Hunting for secrets…", "Checking permissions…", "Testing the license check…", "Rating a risk…"]},"sp-build-fixer":{desk:[74,49.2],icon:"\ud83d\udd27",jobs:["Reading the error…", "Fixing a build…", "Re-running the check…", "Cleaning a warning…"]},"sp-android-reviewer":{desk:[24,58.8],icon:"\ud83e\udd16",jobs:["Checking the service…", "Reviewing the mic code…", "Reading the manifest…", "Testing permissions…"]},"sp-web-reviewer":{desk:[74,58.8],icon:"\ud83c\udf10",jobs:["Checking React state…", "Testing the layout…", "Reviewing storage…", "Running a browser test…"]},"sp-electron-reviewer":{desk:[24,68.3],icon:"\ud83d\udda5\ufe0f",jobs:["Reviewing the PC app…", "Checking the tray…", "Testing a PC action…", "Reading the preload…"]},"sp-worker-reviewer":{desk:[74,68.3],icon:"\u2601\ufe0f",jobs:["Checking the Worker…", "Testing a request…", "Reviewing quotas…", "Reading the logs…"]},"sp-test-writer":{desk:[24,77.9],icon:"\ud83e\uddea",jobs:["Writing a test…", "Mocking the Worker…", "Running the suite…", "Fixing a flaky test…"]},"sp-debugger":{desk:[74,77.9],icon:"\ud83d\udc1e",jobs:["Reproducing a bug…", "Following the trail…", "Ranking hypotheses…", "Proving the fix…"]},"sp-refactorer":{desk:[24,87.4],icon:"\ud83e\uddf9",jobs:["Removing dead code…", "Merging duplicates…", "Simplifying a function…", "Running checks…"]},"sp-docs-writer":{desk:[74,87.4],icon:"\ud83d\udcda",jobs:["Writing the README…", "Numbering the steps…", "Updating the guide…", "Adding a tip…"]},"sp-release-checker":{desk:[24,97.0],icon:"\ud83d\ude80",jobs:["Checking versions…", "Reading the workflow…", "Running the smoke list…", "Saying go or no-go…"]},"sp-voice-reviewer":{desk:[74,97.0],icon:"\ud83c\udf99\ufe0f",jobs:["Listening to the wake word…", "Checking the follow-up…", "Testing a voice…", "Trimming a reply…"]}});
+var CXSPOTS=[{x:47,y:6,t:"Checking the board \u{1F4CB}"},{x:47,y:30,t:"☕ Coffee break"},{x:47,y:52,t:"\u{1F914} Thinking…"},{x:47,y:73,t:"\u{1F6B6} Stretching legs"},{x:47,y:94,t:"\u{1F6B6} Taking a walk"}];
 
+var CXSPLOOK={"sp-planner": {"t": "scout", "p": {"skin": "#e0ac86", "hair": "#2b1b12", "pants": "#2a3347", "shoe": "#f2f2f2"}}, "sp-architect": {"t": "scribe", "p": {"skin": "#9a6643", "hair": "#1c130d", "pants": "#1f2a44", "shoe": "#14110e"}}, "sp-code-reviewer": {"t": "coder", "p": {"skin": "#b57a52", "hair": "#0f0f0f", "pants": "#1f3a3a", "shoe": "#f2f2f2"}}, "sp-security-reviewer": {"t": "sage", "p": {"skin": "#c58b64", "hair": "#141414", "pants": "#24303f", "shoe": "#d8d8d8"}}, "sp-build-fixer": {"t": "pilot", "p": {"skin": "#d8a67e", "hair": "#8a8a92", "pants": "#3b3a46", "shoe": "#2b211a"}}, "sp-android-reviewer": {"t": "scout", "p": {"skin": "#e0ac86", "hair": "#2b1b12", "pants": "#2a3347", "shoe": "#f2f2f2"}}, "sp-web-reviewer": {"t": "scribe", "p": {"skin": "#9a6643", "hair": "#1c130d", "pants": "#1f2a44", "shoe": "#14110e"}}, "sp-electron-reviewer": {"t": "coder", "p": {"skin": "#b57a52", "hair": "#0f0f0f", "pants": "#1f3a3a", "shoe": "#f2f2f2"}}, "sp-worker-reviewer": {"t": "sage", "p": {"skin": "#c58b64", "hair": "#141414", "pants": "#24303f", "shoe": "#d8d8d8"}}, "sp-test-writer": {"t": "pilot", "p": {"skin": "#d8a67e", "hair": "#8a8a92", "pants": "#3b3a46", "shoe": "#2b211a"}}, "sp-debugger": {"t": "scout", "p": {"skin": "#e0ac86", "hair": "#2b1b12", "pants": "#2a3347", "shoe": "#f2f2f2"}}, "sp-refactorer": {"t": "scribe", "p": {"skin": "#9a6643", "hair": "#1c130d", "pants": "#1f2a44", "shoe": "#14110e"}}, "sp-docs-writer": {"t": "coder", "p": {"skin": "#b57a52", "hair": "#0f0f0f", "pants": "#1f3a3a", "shoe": "#f2f2f2"}}, "sp-release-checker": {"t": "sage", "p": {"skin": "#c58b64", "hair": "#141414", "pants": "#24303f", "shoe": "#d8d8d8"}}, "sp-voice-reviewer": {"t": "pilot", "p": {"skin": "#d8a67e", "hair": "#8a8a92", "pants": "#3b3a46", "shoe": "#2b211a"}}};
 function cxHuman(id,col,s){
+let P0=null;if(CXSPLOOK[id]){P0=CXSPLOOK[id].p;id=CXSPLOOK[id].t}
 const h=B.default.createElement,F=c=>({style:{fill:c}});
-const P={
+const P=P0||{
 scout:{skin:"#e0ac86",hair:"#3a2316",pants:"#2a3347",shoe:"#f2f2f2"},
 scribe:{skin:"#f1cdb0",hair:"#1d1428",pants:"#3a2f3f",shoe:"#7a3b4b"},
 coder:{skin:"#c58b64",hair:"#141414",pants:"#202633",shoe:"#e8e8e8"},
@@ -4057,7 +4059,7 @@ h("path",{className:"cxo__mouth",d:"M26.5 29.5Q30 32 33.5 29.5",stroke:"#8a3b3b"
 extra,front)))}
 
 function CxDash(p){
-const R=B.default,h=R.createElement,ag=$r,st=p.agentState,act=Array.isArray(p.activity)?p.activity:[],sx=p.stats||{};
+const R=B.default,h=R.createElement,ag=p.home?$r:$rAll,st=p.agentState,act=Array.isArray(p.activity)?p.activity:[],sx=p.stats||{};
 const sk=ag.map(a=>st[a.id]&&st[a.id].status).join(),prev=R.useRef(null);
 R.useEffect(()=>{const cur={};ag.forEach(a=>cur[a.id]=st[a.id]&&st[a.id].status);const pv=prev.current;if(pv&&!p.home)ag.forEach(a=>{if(cur[a.id]==="done"&&pv[a.id]!=="done"&&p.onActivity)p.onActivity(a.name+" completed the task")});prev.current=cur},[sk]);
 const[f,setF]=R.useState("all");
@@ -4074,10 +4076,10 @@ const gref=R.useRef({}),sref=R.useRef({}),pref=R.useRef({}),stR=R.useRef(st);stR
 const workRef=R.useRef(working);workRef.current=working;
 const[bars,setBars]=R.useState(()=>Array(26).fill(0));
 R.useEffect(()=>{const t=setInterval(()=>setBars(b=>[...b.slice(1),workRef.current]),1100);return()=>clearInterval(t)},[]);
-const ang0=i=>i*1.26+.4,ps=(i,a)=>({x:200+ORB[i].rx*Math.cos(a),y:170+ORB[i].rx*.76*Math.sin(a)});
+const ang0=i=>(i%5)*1.26+.4+Math.floor(i/5)*1.5708,ps=(i,a)=>({x:200+ORB[i%5].rx*Math.cos(a),y:170+ORB[i%5].rx*.76*Math.sin(a)});
 R.useEffect(()=>{let raf,last=performance.now();const ang={};ag.forEach((a,i)=>ang[a.id]=ang0(i));
 const loop=now=>{const dt=Math.min(.05,(now-last)/1000);last=now;
-ag.forEach((a,i)=>{const o=ORB[i],w=stR.current[a.id]&&stR.current[a.id].status==="working";ang[a.id]+=o.sp*dt*(w?3.4:1);
+ag.forEach((a,i)=>{const o=ORB[i%5],w=stR.current[a.id]&&stR.current[a.id].status==="working";ang[a.id]+=o.sp*dt*(w?3.4:1);
 const x=200+o.rx*Math.cos(ang[a.id]),y=170+o.rx*.76*Math.sin(ang[a.id]);
 const g=gref.current[a.id];if(g)g.setAttribute("transform","translate("+x.toFixed(1)+" "+y.toFixed(1)+")");
 const l=sref.current[a.id];if(l){l.setAttribute("x2",x.toFixed(1));l.setAttribute("y2",y.toFixed(1))}
@@ -4092,7 +4094,7 @@ h("radialGradient",{id:"cxdG"},h("stop",{offset:"0%",stopColor:"#4FD6E8",stopOpa
 stars.map((q,i)=>h("circle",{key:"st"+i,cx:q.x,cy:q.y,r:q.r,fill:"#9fe8f5",className:"cxd__star",style:{animationDelay:q.d+"s"}})),
 h("circle",{cx:200,cy:170,r:92,fill:"url(#cxdG)"}),
 working>0&&[0,1].map(k=>h("circle",{key:"pl"+k,cx:200,cy:170,r:40,className:"cxd__pulse",style:{animationDelay:k*1.1+"s"}})),
-ag.map((a,i)=>h("ellipse",{key:"o"+a.id,cx:200,cy:170,rx:ORB[i].rx,ry:ORB[i].rx*.76,className:"cxd__orbit","data-on":S(a)==="working",style:{stroke:fh[a.color]}})),
+ag.slice(0,5).map((a,i)=>h("ellipse",{key:"o"+a.id,cx:200,cy:170,rx:ORB[i].rx,ry:ORB[i].rx*.76,className:"cxd__orbit","data-on":S(a)==="working",style:{stroke:fh[a.color]}})),
 ag.map((a,i)=>{const w=S(a)==="working",col=fh[a.color],q=ps(i,ang0(i));
 return h("g",{key:"s"+a.id},h("line",{ref:e=>{sref.current[a.id]=e},x1:200,y1:170,x2:q.x,y2:q.y,className:"cxd__spoke","data-on":w,style:{stroke:col}}),h("circle",{ref:e=>{pref.current[a.id]=e},cx:200,cy:170,r:1.6,style:{fill:w?"#fff":col}}))}),
 h("g",{className:"cxd__hub",transform:"translate(200 170)"},
@@ -4103,12 +4105,12 @@ h("ellipse",{className:"cxd__mer cxd__mer2",rx:28,ry:40,fill:"none",stroke:"#d6f
 h("circle",{cx:-12,cy:-14,r:9,fill:"#fff",opacity:.12}),
 ),h("text",{x:200,y:334,textAnchor:"middle",className:"cxd__hubt"},"CORTEX CORE"),
 ag.map((a,i)=>{const col=fh[a.color],stt=S(a),sel=p.selected===a.id,q=ps(i,ang0(i));
-return h("g",{key:"n"+a.id,ref:e=>{gref.current[a.id]=e},className:"cxd__node","data-st":stt,transform:"translate("+q.x.toFixed(1)+" "+q.y.toFixed(1)+")",onClick:()=>p.onSelect(a.id)},
+return h("g",{key:"n"+a.id,ref:e=>{gref.current[a.id]=e},className:"cxd__node","data-st":stt,transform:"translate("+q.x.toFixed(1)+" "+q.y.toFixed(1)+")",onClick:()=>p.onSelect(a.id)},h("g",{transform:i>=5?"scale(.8)":null},
 h("circle",{r:24,className:"cxd__halo",style:{fill:col}}),
 h("circle",{r:19,fill:"#0a121c",style:{stroke:col},strokeWidth:sel?3.5:2}),
 h("text",{y:6,textAnchor:"middle",fontSize:17},CXO[a.id].icon),
 h("circle",{cx:15,cy:-15,r:4.5,fill:dotc[stt],stroke:"#0a121c",strokeWidth:1.6}),
-h("text",{y:35,textAnchor:"middle",className:"cxd__nm"},a.name))}))
+h("text",{y:35,textAnchor:"middle",className:"cxd__nm"},a.name)))}))
 );
 const gauge=h("div",{className:"cxd__card"},h("div",{className:"cxd__title"},"// SIGNAL"),
 h("div",{className:"cxd__gw"},h("svg",{viewBox:"0 0 120 120",className:"cxd__g"},h("circle",{cx:60,cy:60,r:R0,fill:"none",stroke:"rgba(255,255,255,.08)",strokeWidth:9}),
@@ -4199,7 +4201,7 @@ h("div",{className:"cxh2__core"},h(Ks,{state:p.state,onClick:p.onClick}))),
 h("div",{className:"cxh2__hello"},gr,h("small",null,"Tap the core and talk · tap a moon to open its agent")),
 h("div",{className:"cxh2__pills"},CXQ.map(q=>{const a=$r.find(z=>z.id===cxRoute(q.p));return h("button",{key:q.t,style:{"--ac":fh[a.color]},onClick:()=>pick(q)},h("span",null,q.i),q.t)})))}
 function CxOffice(p){
-const R=B.default,h=R.createElement,ids=$r.map(a=>a.id),pick=a=>a[Math.floor(Math.random()*a.length)],nm=id=>($r.find(a=>a.id===id)||{}).name||id;
+const R=B.default,h=R.createElement,ids=$rAll.map(a=>a.id),pick=a=>a[Math.floor(Math.random()*a.length)],nm=id=>($rAll.find(a=>a.id===id)||{}).name||id;
 const[st,setSt]=R.useState(()=>{const o={};ids.forEach(id=>{const d=CXO[id].desk;o[id]={x:d[0],y:d[1],mode:"work",dir:1,dur:0,txt:CXO[id].jobs[0]}});return o});
 const pos=R.useRef(st);pos.current=st;
 const live=R.useRef(p.agentState);live.current=p.agentState;
@@ -4212,7 +4214,7 @@ if(dead.current)return;clearTimeout(tm.current[id]);
 const a=CXO[id],busy=!!(live.current&&live.current[id]&&live.current[id].status==="working"),r=Math.random();
 let tx,ty,mode,txt;
 if(busy||r<.5){tx=a.desk[0];ty=a.desk[1];mode="work";txt=busy?"Working on your task…":pick(a.jobs)}
-else if(r<.78){const o=pick(ids.filter(k=>k!==id)),d=CXO[o].desk;tx=d[0]+(d[0]<50?15:-15);ty=d[1]+9;mode="chat";txt="\u{1F4AC} Chatting with "+nm(o)}
+else if(r<.78){const o=pick(ids.filter(k=>k!==id)),d=CXO[o].desk;tx=d[0]+(d[0]<50?15:-15);ty=d[1]+4;mode="chat";txt="\u{1F4AC} Chatting with "+nm(o)}
 else{const sp=pick(CXSPOTS);tx=sp.x+(Math.random()*8-4);ty=sp.y;mode="chat";txt=sp.t}
 const c=pos.current[id],dist=Math.hypot(tx-c.x,ty-c.y),dur=dist>2?Math.round(dist*70):0;
 if(dur){set(id,{x:tx,y:ty,mode:"walk",dir:tx>=c.x?1:-1,dur,txt:""});tm.current[id+"a"]=setTimeout(()=>set(id,{mode,txt,dur:0}),dur+60)}else set(id,{mode,txt,dur:0});
@@ -4224,12 +4226,12 @@ const rot=setInterval(()=>{setSt(s=>{const n={...s};ids.forEach(id=>{const b=liv
 return()=>{dead.current=true;clearInterval(rot);Object.values(tm.current).forEach(clearTimeout)}},[]);
 const key=ids.map(id=>p.agentState[id]&&p.agentState[id].status).join();
 R.useEffect(()=>{ids.forEach(id=>{if(p.agentState[id]&&p.agentState[id].status==="working"&&stepRef.current)stepRef.current(id)})},[key]);
-function agent(id){const a=$r.find(x=>x.id===id),s=st[id],col=fh[a.color]||"#4FD6E8",real=p.agentState[id]&&p.agentState[id].status;
+function agent(id){const a=$rAll.find(x=>x.id===id),s=st[id],col=fh[a.color]||"#4FD6E8",real=p.agentState[id]&&p.agentState[id].status;
 const hair={scout:"#5b3a1e",scribe:"#2b1b3d",coder:"#1b2b3d",sage:"#7a7a7a",pilot:"#3d2b1b"}[id]||"#333";
 return h("button",{key:"a"+id,className:"cxo__ag","data-mode":s.mode,"data-sel":p.selected===id,onClick:()=>p.onSelect(id),title:a.name,style:{left:s.x+"%",top:s.y+"%",zIndex:s.mode==="work"?2:6,transitionDuration:s.dur+"ms"}},
 (s.txt||real==="done"||real==="error")&&h("div",{className:"cxo__bub"},real==="done"&&s.mode==="work"?"✓ Done":real==="error"?"! Problem":s.txt),
 cxHuman(id,col,s))}
-function desk(id){const a=$r.find(x=>x.id===id),d=CXO[id].desk,col=fh[a.color]||"#4FD6E8",s=st[id],real=p.agentState[id]&&p.agentState[id].status;
+function desk(id){const a=$rAll.find(x=>x.id===id),d=CXO[id].desk,col=fh[a.color]||"#4FD6E8",s=st[id],real=p.agentState[id]&&p.agentState[id].status;
 return h("button",{key:"d"+id,className:"cxo__desk","data-active":s.mode==="work","data-sel":p.selected===id,onClick:()=>p.onSelect(id),style:{left:d[0]+"%",top:d[1]+"%","--glow":col}},
 h("span",{className:"cxo__icon"},CXO[id].icon),
 h("span",{className:"cxo__plate"},h("b",null,a.name),h("i",{style:{color:real==="working"?col:undefined}},real==="working"?" ● working":" · "+a.role)))}
