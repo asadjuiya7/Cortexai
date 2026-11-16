@@ -62,7 +62,7 @@ class MainActivity : AppCompatActivity() {
                         val i = Intent(Intent.ACTION_GET_CONTENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = "*/*"
-                            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "application/pdf", "text/*", "application/json"))
+                            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "application/pdf", "text/*", "application/json", "audio/*"))
                         }
                         startActivityForResult(Intent.createChooser(i, "Choose file"), FILE_CHOOSER_CODE)
                         true
@@ -192,6 +192,15 @@ class MainActivity : AppCompatActivity() {
             prefs.edit()
                 .putString("license", license ?: "")
                 .putString("provider", provider ?: "gemini")
+                .apply()
+        }
+
+        @android.webkit.JavascriptInterface
+        fun setVoiceStyle(on: Boolean, pitch: Float, rate: Float) {
+            prefs.edit()
+                .putBoolean("voice_style_on", on)
+                .putFloat("voice_pitch", pitch.coerceIn(0.5f, 1.6f))
+                .putFloat("voice_rate", rate.coerceIn(0.7f, 1.4f))
                 .apply()
         }
 

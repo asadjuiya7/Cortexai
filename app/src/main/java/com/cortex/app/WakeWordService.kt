@@ -69,7 +69,7 @@ class WakeWordService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var restartAttempts = 0
     private var stopped = false
-    private var mode = Mode.WAKE
+    @Volatile private var mode = Mode.WAKE
     private var lastNotifText = ""
     private var lastLaunchAt = 0L
     private var lastActivityAt = 0L
@@ -274,6 +274,11 @@ class WakeWordService : Service() {
 
     override fun onDestroy() {
         stopped = true
+        engineOn = false
+        try {
+            engineThread?.join(1500)
+        } catch (e: Exception) {
+        }
         handler.removeCallbacksAndMessages(null)
         removeOverlay()
         cmdRunning = false
@@ -334,7 +339,13 @@ class WakeWordService : Service() {
     }
 
     private fun beginListening() {
-        if (stopped || mode == Mode.BUSY) return
+        if (stopped) return
+        if (engineOn) {
+            // One steady microphone is already open and follows the mode by itself.
+            if (mode == Mode.COMMAND) showStatus("Listening...")
+            return
+        }
+        if (mode == Mode.BUSY) return
         if (mode == Mode.WAKE && voskReady) {
             // Offline engine: no beeps, no gaps. Free the system recognizer first.
             try {
@@ -441,7 +452,8 @@ class WakeWordService : Service() {
                         voskReady = true
                         voskLoading = false
                         updateNotification("Listening for \"Hey Cortex\" (offline)")
-                        if (mode == Mode.WAKE) {
+                        startEngine()
+                        if (!engineOn && mode == Mode.WAKE) {
                             handler.removeCallbacks(restartRunnable)
                             beginListening()
                         }
@@ -514,11 +526,11 @@ class WakeWordService : Service() {
 
     private val voskListener = object : org.vosk.android.RecognitionListener {
         override fun onPartialResult(hypothesis: String?) {
-            check(hypothesis, "partial")
+            voskCheck(hypothesis, "partial")
         }
 
         override fun onResult(hypothesis: String?) {
-            check(hypothesis, "text")
+            voskCheck(hypothesis, "text")
         }
 
         override fun onFinalResult(hypothesis: String?) {}
@@ -532,42 +544,42 @@ class WakeWordService : Service() {
         }
 
         override fun onTimeout() {}
+    }
 
-        private fun check(json: String?, key: String) {
-            if (stopped || mode != Mode.WAKE || voskTriggered || json == null) return
-            val obj = try {
-                JSONObject(json)
-            } catch (e: Exception) {
-                return
-            }
-            val text = obj.optString(key, "")
-            if (text.isEmpty() || !VOSK_WAKE.containsMatchIn(text.lowercase())) return
-            val lockOn = voiceLockOn()
-            if (enrollLeft > 0 || lockOn) {
-                // Need the speaker vector, which only comes with the final result.
-                if (key != "text") return
-                val vec = readSpk(obj)
-                if (enrollLeft > 0) {
-                    if (vec == null) {
-                        postNotif("Voice-match model not ready yet")
-                        return
-                    }
-                    enrollVecs.add(vec)
-                    enrollLeft -= 1
-                    if (enrollLeft == 0) finishEnroll() else
-                        postNotif("Say \"Hey Cortex\" again ($enrollLeft left)")
+    private fun voskCheck(json: String?, key: String) {
+        if (stopped || mode != Mode.WAKE || voskTriggered || json == null) return
+        val obj = try {
+            JSONObject(json)
+        } catch (e: Exception) {
+            return
+        }
+        val text = obj.optString(key, "")
+        if (text.isEmpty() || !VOSK_WAKE.containsMatchIn(text.lowercase())) return
+        val lockOn = voiceLockOn()
+        if (enrollLeft > 0 || lockOn) {
+            // Need the speaker vector, which only comes with the final result.
+            if (key != "text") return
+            val vec = readSpk(obj)
+            if (enrollLeft > 0) {
+                if (vec == null) {
+                    postNotif("Voice-match model not ready yet")
                     return
                 }
-                val owner = loadOwner()
-                if (owner != null && vec != null) {
-                    val d = cosineDist(owner, vec)
-                    postNotif("Voice match distance " + String.format(Locale.US, "%.2f", d))
-                    if (d > SPK_THRESHOLD) return // not the owner: ignore
-                }
+                enrollVecs.add(vec)
+                enrollLeft -= 1
+                if (enrollLeft == 0) finishEnroll() else
+                    postNotif("Say \"Hey Cortex\" again ($enrollLeft left)")
+                return
             }
-            voskTriggered = true
-            handler.post { onWake("") }
+            val owner = loadOwner()
+            if (owner != null && vec != null) {
+                val d = cosineDist(owner, vec)
+                postNotif("Voice match distance " + String.format(Locale.US, "%.2f", d))
+                if (d > SPK_THRESHOLD) return // not the owner: ignore
+            }
         }
+        voskTriggered = true
+        handler.post { onWake("") }
     }
 
     private fun readSpk(o: JSONObject): DoubleArray? {
@@ -662,7 +674,7 @@ class WakeWordService : Service() {
     }
 
     private fun startVosk() {
-        if (speechSvc != null) return
+        if (engineOn || speechSvc != null) return
         val m = voskModel ?: return
         try {
             val rec = try {
@@ -689,6 +701,7 @@ class WakeWordService : Service() {
     }
 
     private fun stopVosk() {
+        if (engineOn) return
         val s = speechSvc ?: return
         speechSvc = null
         try {
@@ -702,6 +715,184 @@ class WakeWordService : Service() {
     }
 
     // ---------------------------------------------------------------- conversation
+
+    // ---------------------------------------------------------------- one steady microphone
+    // A single AudioRecord stays open the whole time (no on/off flicker of the mic icon).
+    // WAKE: the audio is fed to the offline Vosk recogniser. COMMAND: speech is cut out with a loudness
+    // detector and sent to the AI. BUSY (thinking / speaking): the audio is read and thrown away.
+
+    @Volatile private var engineOn = false
+    @Volatile private var engineFails = 0
+    private var engineThread: Thread? = null
+
+    private fun startEngine() {
+        if (engineOn || stopped || !voskReady) return
+        val m = voskModel ?: return
+        stopVosk() // close the old wake service first so only one microphone stream exists
+        try {
+            recognizer?.cancel()
+        } catch (e: Exception) {
+        }
+        handler.removeCallbacks(restartRunnable)
+        cmdRunning = false
+        unmuteBeep()
+        engineFails = 0
+        engineOn = true
+        engineThread = Thread { runEngine(m) }.also { it.start() }
+        updateNotification("Listening for \"Hey Cortex\" (offline)")
+    }
+
+    private fun runEngine(model: Model) {
+        val sr = 16000
+        var vrec: Recognizer? = null
+        try {
+            val rv: Recognizer = try {
+                Recognizer(model, 16000.0f, VOSK_GRAMMAR)
+            } catch (e: Throwable) {
+                Recognizer(model, 16000.0f)
+            }
+            vrec = rv
+            try {
+                spkModel?.let { rv.setSpeakerModel(it) }
+            } catch (e: Throwable) {
+            }
+            while (!stopped && engineOn) {
+                var rec: AudioRecord? = null
+                try {
+                    val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                    rec = AudioRecord(
+                        MediaRecorder.AudioSource.VOICE_RECOGNITION, sr,
+                        AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+                        maxOf(minBuf, 8192) * 4
+                    )
+                    if (rec.state != AudioRecord.STATE_INITIALIZED) throw RuntimeException("mic not ready")
+                    rec.startRecording()
+                    engineLoop(rec, rv)
+                } catch (e: Throwable) {
+                    engineFails++
+                } finally {
+                    try {
+                        rec?.stop()
+                    } catch (e: Throwable) {
+                    }
+                    try {
+                        rec?.release()
+                    } catch (e: Throwable) {
+                    }
+                }
+                if (stopped || !engineOn || engineFails >= 8) break
+                try {
+                    Thread.sleep(800)
+                } catch (e: InterruptedException) {
+                    break
+                }
+            }
+        } catch (e: Throwable) {
+        } finally {
+            try {
+                vrec?.close()
+            } catch (e: Throwable) {
+            }
+            val gaveUp = !stopped && engineOn
+            engineOn = false
+            if (gaveUp) handler.post { scheduleRestart(300) } // fall back to the old listener
+        }
+    }
+
+    private fun engineLoop(rec: AudioRecord, vrec: Recognizer) {
+        val sr = 16000
+        val frame = ShortArray(320) // 20 ms
+        val out = ByteArrayOutputStream()
+        val pre = ArrayList<ShortArray>()
+        var noise = 300.0
+        var speaking = false
+        var voicedRun = 0
+        var speechFrames = 0
+        var silence = 0
+        var empty = 0
+        var idlePosted = false
+        var lastMode: Mode? = null
+        while (!stopped && engineOn) {
+            val n = rec.read(frame, 0, frame.size)
+            if (n <= 0) {
+                empty++
+                if (empty > 50) throw RuntimeException("mic silent")
+                continue
+            }
+            empty = 0
+            engineFails = 0
+            val md = mode
+            if (md != lastMode) {
+                if (md == Mode.WAKE) {
+                    vrec.reset()
+                    voskTriggered = false
+                }
+                if (md == Mode.COMMAND) {
+                    out.reset()
+                    pre.clear()
+                    speaking = false
+                    voicedRun = 0
+                    speechFrames = 0
+                    silence = 0
+                    idlePosted = false
+                }
+                lastMode = md
+            }
+            if (md == Mode.WAKE) {
+                if (voskReady && !voskTriggered) {
+                    val fin = vrec.acceptWaveForm(frame, n)
+                    voskCheck(if (fin) vrec.result else vrec.partialResult, if (fin) "text" else "partial")
+                }
+            } else if (md == Mode.COMMAND) {
+                var sum = 0.0
+                for (i in 0 until n) sum += frame[i].toDouble() * frame[i]
+                val rms = Math.sqrt(sum / n)
+                val thr = maxOf(800.0, noise * 2.6)
+                val voiced = rms > thr
+                if (!speaking) {
+                    noise = noise * 0.97 + rms * 0.03
+                    pre.add(frame.copyOf(n))
+                    if (pre.size > 12) pre.removeAt(0)
+                    if (voiced) voicedRun++ else voicedRun = 0
+                    if (voicedRun >= 3) {
+                        speaking = true
+                        for (f in pre) for (v in f) {
+                            out.write(v.toInt() and 0xff)
+                            out.write((v.toInt() shr 8) and 0xff)
+                        }
+                        speechFrames = voicedRun
+                        silence = 0
+                    } else if (!idlePosted && System.currentTimeMillis() - lastActivityAt > IDLE_CLOSE_MS) {
+                        idlePosted = true
+                        handler.post { if (!stopped && mode == Mode.COMMAND) endConversation() }
+                    }
+                } else {
+                    for (i in 0 until n) {
+                        out.write(frame[i].toInt() and 0xff)
+                        out.write((frame[i].toInt() shr 8) and 0xff)
+                    }
+                    if (voiced) {
+                        speechFrames++
+                        silence = 0
+                    } else {
+                        silence++
+                    }
+                    if (silence >= 40 || out.size() > sr * 2 * 14) { // 0.8 s of quiet, or 14 s max
+                        val pcm = if (speechFrames >= 14) out.toByteArray() else null
+                        out.reset()
+                        pre.clear()
+                        speaking = false
+                        voicedRun = 0
+                        speechFrames = 0
+                        silence = 0
+                        if (pcm != null) {
+                            handler.post { if (!stopped && mode == Mode.COMMAND) onAudioCaptured(pcm) }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private fun onWake(remainder: String) {
         stopVosk()
@@ -824,6 +1015,10 @@ class WakeWordService : Service() {
     // loudness detector and sent to the AI as audio, which also does the speech recognition.
 
     private fun startCmdRecording() {
+        if (engineOn) {
+            showStatus("Listening...")
+            return
+        }
         if (cmdRunning) return
         cmdRunning = true
         showStatus("Listening...")
@@ -1134,6 +1329,7 @@ class WakeWordService : Service() {
         val license = prefs.getString("license", "") ?: ""
         val nonLatin = say.any { it in '\u0600'..'\u06FF' || it in '\u0900'..'\u097F' }
         val cloudOk = say.isNotEmpty() && license.isNotEmpty() && prefs.getBoolean("cloud_voice", true) &&
+            !prefs.getBoolean("voice_style_on", false) &&
             !(nonLatin && System.currentTimeMillis() < cloudSkipUntil)
         if (!cloudOk) {
             speakLocal(reply)
@@ -1287,8 +1483,15 @@ class WakeWordService : Service() {
         } catch (e: Throwable) {
         }
         pickBestVoice(t, loc)
-        t.setSpeechRate(0.95f)
-        t.setPitch(if (actedThisTurn) 0.8f else 1.05f)
+        val sp = getSharedPreferences("cortex_prefs", Context.MODE_PRIVATE)
+        if (sp.getBoolean("voice_style_on", false)) {
+            // "My voice style": the phone voice is tuned to the user's own pitch and speaking speed.
+            t.setSpeechRate(sp.getFloat("voice_rate", 0.95f).coerceIn(0.7f, 1.4f))
+            t.setPitch(sp.getFloat("voice_pitch", 1.0f).coerceIn(0.5f, 1.6f))
+        } else {
+            t.setSpeechRate(0.95f)
+            t.setPitch(if (actedThisTurn) 0.8f else 1.05f)
+        }
         handler.removeCallbacks(speakWatchdog)
         handler.postDelayed(speakWatchdog, 40000)
         t.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "cortex-reply")
