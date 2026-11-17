@@ -204,6 +204,88 @@ class MainActivity : AppCompatActivity() {
                 .apply()
         }
 
+        // ---- Native voice recorder. The WebView microphone is often blocked or busy, so Settings > My Voice records here.
+        @Volatile private var recOn = false
+        private var recRec: android.media.AudioRecord? = null
+        private var recThread: Thread? = null
+        private val recBytes = java.io.ByteArrayOutputStream()
+        private var recWakeWasOn = false
+
+        @android.webkit.JavascriptInterface
+        fun startRecord(): Boolean {
+            if (recOn) return true
+            if (!hasMicPermission()) {
+                runOnUiThread { requestRuntimePermissions() }
+                return false
+            }
+            recWakeWasOn = prefs.getBoolean("wake_enabled", false)
+            if (recWakeWasOn) {
+                // The background wake-word listener uses the microphone too: pause it while recording.
+                stopService(Intent(this@MainActivity, WakeWordService::class.java))
+                try { Thread.sleep(700) } catch (e: Exception) { }
+            }
+            val rate = 16000
+            val min = android.media.AudioRecord.getMinBufferSize(
+                rate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT
+            )
+            if (min <= 0) return false
+            val ar = try {
+                android.media.AudioRecord(
+                    android.media.MediaRecorder.AudioSource.MIC, rate,
+                    android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT, min * 4
+                )
+            } catch (e: Exception) {
+                return false
+            }
+            if (ar.state != android.media.AudioRecord.STATE_INITIALIZED) {
+                ar.release()
+                return false
+            }
+            synchronized(recBytes) { recBytes.reset() }
+            recRec = ar
+            recOn = true
+            ar.startRecording()
+            recThread = Thread {
+                val buf = ByteArray(min)
+                while (recOn) {
+                    val n = ar.read(buf, 0, buf.size)
+                    if (n > 0) {
+                        synchronized(recBytes) { recBytes.write(buf, 0, n) }
+                    } else if (n < 0) {
+                        break
+                    }
+                }
+            }.also { it.start() }
+            return true
+        }
+
+        /** Stops recording and returns the audio as base64 WAV ("" when nothing usable was recorded). */
+        @android.webkit.JavascriptInterface
+        fun stopRecord(): String {
+            if (!recOn && recRec == null) return ""
+            recOn = false
+            try { recThread?.join(1500) } catch (e: Exception) { }
+            try { recRec?.stop() } catch (e: Exception) { }
+            try { recRec?.release() } catch (e: Exception) { }
+            recRec = null
+            recThread = null
+            val pcm = synchronized(recBytes) { recBytes.toByteArray() }
+            if (recWakeWasOn) {
+                recWakeWasOn = false
+                runOnUiThread { launchWakeService() }
+            }
+            if (pcm.size < 16000) return ""
+            return Base64.encodeToString(wavOf(pcm, 16000), Base64.NO_WRAP)
+        }
+
+        private fun wavOf(pcm: ByteArray, rate: Int): ByteArray {
+            val bb = java.nio.ByteBuffer.allocate(44 + pcm.size).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            bb.put("RIFF".toByteArray()).putInt(36 + pcm.size).put("WAVE".toByteArray())
+            bb.put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(rate).putInt(rate * 2).putShort(2).putShort(16)
+            bb.put("data".toByteArray()).putInt(pcm.size).put(pcm)
+            return bb.array()
+        }
+
         @android.webkit.JavascriptInterface
         fun startWakeService() {
             prefs.edit().putBoolean("wake_enabled", true).apply()
